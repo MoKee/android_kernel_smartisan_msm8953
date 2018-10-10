@@ -8,4 +8,19 @@ config SRCARCH
 	string
 	option env="SRCARCH"
 
+config VENDOR_SMARTISAN
+	bool "SMARTISAN support"
+	help
+	  This feature enables Smartisan specific hacks
+
+config VENDOR_SMARTISAN_ODIN
+	bool "SMARTISAN U2 Pro support"
+	help
+	  This feature enables Smartisan U2 Pro specific hacks
+
+config VENDOR_SMARTISAN_OSCAR
+	bool "SMARTISAN U3 support"
+	help
+	  This feature enables Smartisan U3 specific hacks
+
 source "arch/$SRCARCH/Kconfig"
