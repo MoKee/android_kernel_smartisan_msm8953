@@ -836,4 +836,22 @@ config DOUBLE_TAP
 	help
 	 If you say yes here, you get support Bosch double tap sensor function
 
+config INPUT_NXU8010_RGBW
+	tristate "NXU8010 rgb sensor"
+	depends on INPUT && I2C
+	help
+	  Say Y to enable support for the NXU8010 rgb sensor driver.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called nxu8010 rgb sensor.
+
+config INPUT_TCS3400_RGBW
+	tristate "TCS3400 Sensor Driver"
+	depends on INPUT && I2C
+	help
+	  This option enables support for the ams TCS3400 Sensor Driver.
+
+	  To compile this driver as a module, choose M here. The module will
+	  be called tcs3400.
+
 endif

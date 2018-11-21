@@ -86,3 +86,7 @@ endif
 obj-$(CONFIG_INPUT_IDEAPAD_SLIDEBAR)	+= ideapad_slidebar.o
 obj-$(CONFIG_INPUT_PIXART_OTS_PAT9125_SWITCH)	+= ots_pat9125/
 obj-$(CONFIG_STMVL53L0X)	+= vl53l0x/
+ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+obj-$(CONFIG_INPUT_NXU8010_RGBW)	+= nxu8010_driver.o
+obj-$(CONFIG_INPUT_TCS3400_RGBW)	+= tcs3400_driver.o
+endif
