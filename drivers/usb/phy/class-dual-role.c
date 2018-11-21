@@ -45,6 +45,9 @@ static struct device_attribute dual_role_attrs[] = {
 	DUAL_ROLE_ATTR(mode),
 	DUAL_ROLE_ATTR(power_role),
 	DUAL_ROLE_ATTR(data_role),
+#ifdef CONFIG_VENDOR_SMARTISAN
+	DUAL_ROLE_ATTR(cc_vendor),
+#endif
 	DUAL_ROLE_ATTR(powers_vconn),
 };
 
@@ -247,6 +250,13 @@ static char *supported_modes_text[] = {
 	"ufp dfp", "dfp", "ufp"
 };
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+/* cc vendors */
+static char *cc_vendor_text[] = {
+	"unknown", "fairchild", "pericom"
+};
+#endif
+
 /* current mode */
 static char *mode_text[] = {
 	"ufp", "dfp", "none"
@@ -277,6 +287,10 @@ static ssize_t dual_role_show_property(struct device *dev,
 
 	if (off == DUAL_ROLE_PROP_SUPPORTED_MODES) {
 		value = dual_role->desc->supported_modes;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	} else if (off == DUAL_ROLE_PROP_CC_VENDOR) {
+		value = dual_role->desc->cc_vendor;
+#endif
 	} else {
 		ret = dual_role_get_property(dual_role, off, &value);
 
@@ -301,6 +315,16 @@ static ssize_t dual_role_show_property(struct device *dev,
 					supported_modes_text[value]);
 		else
 			return -EIO;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	} else if (off == DUAL_ROLE_PROP_CC_VENDOR) {
+		BUILD_BUG_ON(DUAL_ROLE_PROP_CC_VENDOR_TOTAL !=
+				ARRAY_SIZE(cc_vendor_text));
+		if (value < DUAL_ROLE_PROP_CC_VENDOR_TOTAL)
+			return snprintf(buf, PAGE_SIZE, "%s\n",
+					cc_vendor_text[value]);
+		else
+			return -EIO;
+#endif
 	} else if (off == DUAL_ROLE_PROP_MODE) {
 		BUILD_BUG_ON(DUAL_ROLE_PROP_MODE_TOTAL !=
 			ARRAY_SIZE(mode_text));
@@ -403,8 +427,13 @@ static umode_t dual_role_attr_is_visible(struct kobject *kobj,
 	umode_t mode = S_IRUSR | S_IRGRP | S_IROTH;
 	int i;
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+	if (attrno == DUAL_ROLE_PROP_SUPPORTED_MODES || attrno == DUAL_ROLE_PROP_CC_VENDOR)
+		return mode;
+#else
 	if (attrno == DUAL_ROLE_PROP_SUPPORTED_MODES)
 		return mode;
+#endif
 
 	for (i = 0; i < dual_role->desc->num_properties; i++) {
 		int property = dual_role->desc->properties[i];
