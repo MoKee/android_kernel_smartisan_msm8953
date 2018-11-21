@@ -12,7 +12,13 @@
  */
 
 #include "msm8953-pinctrl.dtsi"
+#if defined(CONFIG_VENDOR_SMARTISAN_ODIN)
+#include "u3-p1-msm8953-camera-odin.dtsi"
+#elif defined(CONFIG_VENDOR_SMARTISAN_OSCAR)
+#include "u3-p1-msm8953-camera-oscar.dtsi"
+#else
 #include "msm8953-camera-sensor-qrd.dtsi"
+#endif
 
 &soc {
 	gpio_keys {
@@ -33,6 +39,75 @@
 
 	i2c@78b7000 { /* BLSP1 QUP3 */
 		status = "okay";
+#if defined(CONFIG_VENDOR_SMARTISAN_ODIN)
+		focaltech@38 {
+			compatible = "focaltech,fts";
+			reg = <0x38>;
+			interrupt-parent = <&tlmm>;
+			interrupts = <65 0x2>;
+			vcc_i2c-supply = <&pm8953_l6>;
+			/* pins used by touchscreen */
+			pinctrl-names = "pmx_ts_active", "pmx_ts_suspend", "pmx_ts_release";
+			pinctrl-0 = <&ts_int_active &ts_reset_active>;
+			pinctrl-1 = <&ts_int_suspend &ts_reset_suspend>;
+			pinctrl-2 = <&ts_release>;
+			focaltech,reset-gpio = <&tlmm 64 0x0>;
+			focaltech,irq-gpio = <&tlmm 65 0x2008>;
+			focaltech,max-touch-number = <10>;
+			focaltech,display-coords = <0 0 1080 1920>;
+		};
+
+		novatek@01 {
+			compatible = "novatek,NVT-ts";
+			reg = <0x01>;
+			interrupt-parent = <&tlmm>;
+			interrupts = <65 0x2>;
+			vcc_i2c-supply = <&pm8953_l6>;
+			pinctrl-names = "pmx_ts_active", "pmx_ts_suspend", "pmx_ts_release";
+			pinctrl-0 = <&ts_int_active &ts_reset_active>;
+			pinctrl-1 = <&ts_int_suspend &ts_reset_suspend>;
+			pinctrl-2 = <&ts_release>;
+			novatek,reset-gpio = <&tlmm 64 0x0>;
+			novatek,irq-gpio = <&tlmm 65 0x2008>;
+		};
+
+		nxu8010@44 {
+			compatible = "nxu8010";
+			reg = <0x44>;
+			vdd-supply = <&pm8953_l10>;
+		};
+
+		tcs3400@29 {
+			compatible = "tcs3400";
+			reg = <0x29>;
+			vdd-supply = <&pm8953_l10>;
+		};
+#elif defined(CONFIG_VENDOR_SMARTISAN_OSCAR)
+		synaptics_dsx@70 {
+			compatible = "synaptics,dsx-i2c";
+			reg = <0x70>;
+			interrupt-parent = <&tlmm>;
+			interrupts = <65 0x2>;
+			vcc_i2c-supply = <&pm8953_l6>;
+			vdd_ana-supply = <&pm8953_l10>;
+			pinctrl-names = "pmx_ts_active", "pmx_ts_suspend", "pmx_ts_release";
+			pinctrl-0 = <&ts_int_active &ts_reset_active>;
+			pinctrl-1 = <&ts_int_suspend &ts_reset_suspend>;
+			pinctrl-2 = <&ts_release>;
+			synaptics,bus-reg-name = "vcc_i2c";
+			synaptics,irq-gpio = <&tlmm 65 0x2008>;
+			synaptics,irq-on-state = <0>;
+			synaptics,power-delay-ms = <200>;
+			synaptics,pwr-reg-name = "vdd_ana";
+			synaptics,reset-active-ms = <20>;
+			synaptics,reset-delay-ms = <200>;
+			synaptics,reset-gpio = <&tlmm 64 0x0>;
+			synaptics,reset-on-state = <0>;
+			synaptics,ub-i2c-addr = <0x2c>;
+			synaptics,x-flip;
+			synaptics,y-flip;
+		};
+#else
 		synaptics@4b {
 			compatible = "synaptics,dsx-i2c";
 			reg = <0x4b>;
@@ -58,13 +133,16 @@
 			clocks = <&clock_gcc clk_gcc_blsp1_ahb_clk>,
 				<&clock_gcc clk_gcc_blsp1_qup3_i2c_apps_clk>;
 		};
+#endif
 	};
 
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
 	vdd_vreg: vdd_vreg {
 		compatible = "regulator-fixed";
 		status = "ok";
 		regulator-name = "vdd_vreg";
 	};
+#endif
 };
 
 &wled {
@@ -74,7 +152,11 @@
 &spmi_bus {
 	qcom,pmi8950@2 {
 		qcom,leds@a100 {
+#ifdef CONFIG_VENDOR_SMARTISAN
+			status = "disabled";
+#else
 			status = "okay";
+#endif
 			qcom,led_mpp_2 {
 				label = "mpp";
 				linux,name = "green";
@@ -93,25 +175,39 @@
 
 / {
 	qrd_batterydata: qcom,battery-data {
+#if defined(CONFIG_VENDOR_SMARTISAN_ODIN)
+		qcom,batt-id-range-pct = <15>;
+		#include "batterydata-smartisan-atl-4v4-3500mah.dtsi"
+		#include "batterydata-smartisan-scud-4v4-3500mah.dtsi"
+#elif defined(CONFIG_VENDOR_SMARTISAN_OSCAR)
+		qcom,batt-id-range-pct = <50>;
+		#include "batterydata-oscar-atl-4v4-3900mah.dtsi"
+		#include "batterydata-oscar-jkga-4v4-4000mah.dtsi"
+#else
 		qcom,batt-id-range-pct = <15>;
 		#include "batterydata-qrd-sku1-4v4-2800mah.dtsi"
+#endif
 	};
 };
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 &pm8953_typec {
 	ss-mux-supply = <&pm8953_l6>;
 	qcom,ssmux-gpio = <&tlmm 139 GPIO_ACTIVE_LOW>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&typec_ssmux_config>;
 };
+#endif
 
 &pmi8950_charger {
 	qcom,battery-data = <&qrd_batterydata>;
 	qcom,float-voltage-mv = <4400>;
 	qcom,chg-led-sw-controls;
 	qcom,chg-led-support;
+#ifndef CONFIG_VENDOR_SMARTISAN
 	qcom,external-typec;
 	qcom,typec-psy-name = "typec";
+#endif
 	qcom,thermal-mitigation = <3000 2500 2000 1500 1000 500 0>;
 	status = "okay";
 };
@@ -122,8 +218,12 @@
 	qcom,cool-bat-decidegc = <0>;
 	qcom,warm-bat-decidegc = <550>;
 	qcom,hot-bat-decidegc = <550>;
+#ifdef CONFIG_VENDOR_SMARTISAN_OSCAR
+	qcom,resume-soc = <99>;
+#else
 	qcom,bad-battery-detection-enable;
 	qcom,hold-soc-while-full;
+#endif
 };
 
 &blsp1_uart0 {
@@ -135,8 +235,15 @@
 &sdhc_1 {
 	/* device core power supply */
 	vdd-supply = <&pm8953_l8>;
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+	qcom,vdd-voltage-level = <2950000 2950000>;
+#else
 	qcom,vdd-voltage-level = <2900000 2900000>;
+#endif
 	qcom,vdd-current-level = <200 570000>;
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+	qcom,vdd-always-on;
+#endif
 
 	/* device communication power supply */
 	vdd-io-supply = <&pm8953_l5>;
@@ -170,7 +277,11 @@
 
 	pinctrl-names = "active", "sleep";
 	pinctrl-0 = <&sdc2_clk_on &sdc2_cmd_on &sdc2_data_on &sdc2_cd_on>;
+#ifdef CONFIG_VENDOR_SMARTISAN_OSCAR
+	pinctrl-1 = <&sdc2_clk_off &sdc2_cmd_off &sdc2_data_off>;
+#else
 	pinctrl-1 = <&sdc2_clk_off &sdc2_cmd_off &sdc2_data_off &sdc2_cd_off>;
+#endif
 
 	#address-cells = <0>;
 	interrupt-parent = <&sdhc_2>;
@@ -181,7 +292,11 @@
 		1 &intc 0 221 0
 		2 &tlmm 133 0>;
 	interrupt-names = "hc_irq", "pwr_irq", "status_irq";
+#ifdef CONFIG_VENDOR_SMARTISAN
+	cd-gpios = <&tlmm 133 0x0>;
+#else
 	cd-gpios = <&tlmm 133 0x1>;
+#endif
 
 	qcom,clk-rates = <400000 20000000 25000000 50000000 100000000
 								200000000>;
@@ -190,6 +305,7 @@
 	status = "ok";
 };
 
+#ifndef CONFIG_VENDOR_SMARTISAN_OSCAR
 &i2c_5 { /* BLSP2 QUP1 (NFC) */
 	nq@28 {
 		compatible = "qcom,nq-nci";
@@ -223,7 +339,9 @@
 		status = "okay";
 	};
 };
+#endif
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 &i2c_3 {
 	status = "ok";
 };
@@ -232,12 +350,21 @@
 	/delete-node/ qcom,flash_1;
 	/delete-node/ qcom,torch_1;
 };
+#endif
 
+#ifndef CONFIG_VENDOR_SMARTISAN_OSCAR
 &led_flash0{
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+	qcom,flash-source = <&pmi8950_flash0 &pmi8950_flash1>;//lijiankun add pmi8950_flash1 & pmi8950_torch1 for flash 2016-11-22
+	qcom,torch-source = <&pmi8950_torch0 &pmi8950_torch1>;//lijiankun add pmi8950_flash1 & pmi8950_torch1 for flash 2016-11-22
+#else
 	qcom,flash-source = <&pmi8950_flash0>;
 	qcom,torch-source = <&pmi8950_torch0>;
+#endif
 };
+#endif
 
+#ifndef CONFIG_VENDOR_SMARTISAN_OSCAR
 &pm8953_vadc {
 	/delete-node/ chan@11;
 };
@@ -253,3 +380,4 @@
 		drive-strength=<12>;
 	};
 };
+#endif

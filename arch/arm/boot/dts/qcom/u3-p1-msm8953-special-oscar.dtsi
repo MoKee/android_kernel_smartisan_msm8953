@@ -1,0 +1,7 @@
+#include "u3-p1-msm8953-charging-oscar.dtsi"
+#include "u3-p1-msm8953-goodix-oscar.dtsi"
+#include "u3-p1-msm8953-betterlife-oscar.dtsi"
+#include "u3-p1-msm8953-special-oscar-audio.dtsi"
+#include "u3-p1-msm8953-haptics-oscar.dtsi"
+#include "u3-p1-msm8953-key-oscar.dtsi"
+#include "u3-p1-msm8953-leds-oscar.dtsi"

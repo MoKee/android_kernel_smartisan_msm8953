@@ -25,6 +25,14 @@
 #include "dsi-panel-lt8912-1080p-video.dtsi"
 #include "dsi-panel-lgd-incell-sw49106-fhd-video.dtsi"
 #include "dsi-panel-hx83100a-800p-video.dtsi"
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+#include "dsi-panel-ft8716-1080p-video.dtsi"
+#include "dsi-panel-nt36672-1080p-video.dtsi"
+#include "dsi-panel-sharp-ft8716-1080p-video.dtsi"
+#endif
+#ifdef CONFIG_VENDOR_SMARTISAN_OSCAR
+#include "dsi-panel-td4310-tcl-1080p-video.dtsi"
+#endif
 
 &soc {
 	dsi_panel_pwr_supply: dsi_panel_pwr_supply {
@@ -47,6 +55,9 @@
 			qcom,supply-max-voltage = <1800000>;
 			qcom,supply-enable-load = <100000>;
 			qcom,supply-disable-load = <100>;
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+			qcom,supply-post-on-sleep = <2>;
+#endif
 		};
 	};
 };
@@ -124,3 +135,37 @@
 		1f 1c 05 06 03 03 04 a0
 		1f 10 05 06 03 03 04 a0];
 };
+
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+&dsi_ft8716_1080p_vid {
+	qcom,mdss-dsi-panel-timings-phy-v2 = [24 1f 08 09 05 03 04 a0
+		2f 1f 08 09 05 03 04 a0
+		2f 1f 08 09 05 03 04 a0
+		2f 1f 08 09 05 03 04 a0
+		2f 1b 08 09 05 03 04 a0];
+};
+
+&dsi_sharp_ft8716_1080p_vid {
+	qcom,mdss-dsi-panel-timings-phy-v2 = [24 1f 08 09 05 03 04 a0
+		24 1f 08 09 05 03 04 a0
+		24 1f 08 09 05 03 04 a0
+		24 1f 08 09 05 03 04 a0
+		24 1b 08 09 05 03 04 a0];
+};
+
+&dsi_nt36672_1080p_vid {
+	qcom,mdss-dsi-panel-timings-phy-v2 = [24 1f 08 09 05 03 04 a0
+		24 1f 08 09 05 03 04 a0
+		24 1f 08 09 05 03 04 a0
+		24 1f 08 09 05 03 04 a0
+		24 1b 08 09 05 03 04 a0];
+};
+#endif
+
+#ifdef CONFIG_VENDOR_SMARTISAN_OSCAR
+&dsi_td4310_tcl_1080p_vid {
+	qcom,mdss-dsi-panel-timings-phy-v2 = <
+		0xd0a080a 0x60304a0 0xd0a080a 0x60304a0 0xd0a080a
+		0x60304a0 0xd0a080a 0x60304a0 0xd1d0809 0x60304a0>;
+};
+#endif

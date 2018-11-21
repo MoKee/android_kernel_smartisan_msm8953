@@ -1,0 +1,16 @@
+qcom,oscar_atl_3900mah {
+	qcom,max-voltage-uv = <4400000>;
+	qcom,nom-batt-capacity-mah = <3900>;
+	qcom,batt-id-kohm = <9>;
+	qcom,cool-fastchg-current-comp = <700>;
+	qcom,battery-beta = <3435>;
+	qcom,thermal-coefficients = [c2 86 bb 50 cf 37];
+	qcom,battery-type = "oscar_atl_3900mAh";
+	qcom,chg-rslow-comp-c1 = <3761995>;
+	qcom,chg-rslow-comp-c2 = <6912978>;
+	qcom,chg-rs-to-rslow = <1039950>;
+	qcom,chg-rslow-comp-thr = <0xba>;
+	qcom,checksum = <0x486e>;
+	qcom,gui-version = "PMI8950GUI - 2.0.0.16";
+	qcom,fg-profile-data = <0xaf835475 0x4d7aed6d 0x38831278 0xfb84ce81 0xf981b89b 0x80bffcd0 0x6a10e883 0x817c9480 0xd6753483 0xc179de87 0x4e882482 0xa79b32c4 0x5cd2690e 0x990ff958 0x1470eefc 0x5c455644 0xeb480000 0xbe4cca3b 0xc63a0000 0x0 0x0 0x7170566b 0x13696088 0xa575076a 0x245f067a 0x2374ca63 0xe66fbca1 0x1a3f6133 0x5da0710c 0x2800ff36 0xf0113003 0xc>;
+};

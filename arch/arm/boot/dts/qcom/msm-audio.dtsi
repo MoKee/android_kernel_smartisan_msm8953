@@ -333,11 +333,17 @@
 			"MIC BIAS External", "Secondary Mic",
 			"AMIC1", "MIC BIAS External",
 			"AMIC2", "MIC BIAS External2",
+#ifdef CONFIG_VENDOR_SMARTISAN
+			"AMIC3", "MIC BIAS External";
+#else
 			"AMIC3", "MIC BIAS External",
 			"WSA_SPK OUT", "VDD_WSA_SWITCH",
 			"SpkrMono WSA_IN", "WSA_SPK OUT";
+#endif
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 		qcom,hdmi-dba-codec-rx;
+#endif
 
 		qcom,msm-gpios =
 			"pri_i2s",

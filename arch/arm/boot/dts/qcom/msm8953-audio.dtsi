@@ -112,6 +112,10 @@
 		&cdc_pdm_lines_2_act &cross_conn_det_act
 		&pri_tlmm_lines_act &pri_tlmm_ws_act>;
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+	asoc-codec = <&stub_codec>, <&pm8953_diangu_dig>;
+	asoc-codec-names = "msm-stub-codec.1", "cajon_codec";
+#else
 	asoc-codec = <&stub_codec>, <&pm8953_diangu_dig>, <&hdmi_dba>;
 	asoc-codec-names = "msm-stub-codec.1", "cajon_codec",
 						"msm-hdmi-dba-codec-rx";
@@ -121,6 +125,7 @@
 	msm-vdd-wsa-switch-supply = <&pm8953_l5>;
 	qcom,msm-vdd-wsa-switch-voltage = <1800000>;
 	qcom,msm-vdd-wsa-switch-current = <10000>;
+#endif
 };
 
 &pm8953_gpios {

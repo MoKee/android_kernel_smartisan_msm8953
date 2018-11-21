@@ -1,0 +1,73 @@
+&i2c_2 {
+	/* DSI_TO_HDMI I2C configuration */
+	smb1351-charger@1d {
+		compatible = "qcom,smb1351-charger";
+		reg = <0x1d>;
+		qcom,parallel-charger;
+		qcom,float-voltage-mv = <4400>;
+		qcom,recharge-mv = <100>;
+		qcom,parallel-en-pin-polarity = <1>;
+	};
+};
+
+&i2c_6 {
+	fusb301@25 {
+		compatible = "fc,fusb301";
+		reg = <0x25>;
+		fusb301,int-gpio = <&tlmm 38 0>;
+		fusb301,init-mode = /bits/ 8 <0x20>;
+		fusb301,host-current = /bits/ 8 <1>;
+		fusb301,use-try-snk-emulation;
+		qcom,usb_switch_asel = <&tlmm 33 0>;
+		qcom,cdc_hsdet_l = <&tlmm 25 0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&usbc_int_default &usb_switch_default &hs_det_default>;
+	};
+
+	wusb3801x@68 {
+		compatible = "qcom,wusb3801x";
+		reg = <0x68>;
+		wusb3801,drp-toggle-time = <40>;
+		wusb3801,host-current = <1>;
+		wusb3801,init-mode = <36>;
+		wusb3801,irq-gpio = <&tlmm 38 8200>;
+		interrupt-parent = <&tlmm>;
+		interrupt-names = "wusb3801_int_irq";
+		interrupts = <38 8200>;
+		qcom,usb_switch_asel = <&tlmm 33 0>;
+		qcom,cdc_hsdet_l = <&tlmm 25 0>;
+		pinctrl-names = "pmx_wusb3801_active", "pmx_wusb3801_suspend";
+		pinctrl-0 = <&usbc_int_default &usb_switch_default &hs_det_default>;
+		pinctrl-1 = <&wusb3801_suspend>;
+	};
+};
+
+&pmi8950_charger {
+	qcom,float-voltage-mv = <4400>;
+	qcom,chg-inhibit-fg;
+	qcom,fastchg-current-ma = <3500>;
+	qcom,override-usb-current;
+	qcom,thermal-mitigation = <3500 3000 2500 2000 1500 1000 0>;
+};
+
+&pmi8950_fg {
+	qcom,cold-bat-decidegc = <0>;
+	qcom,cool-bat-decidegc = <150>;
+	qcom,warm-bat-decidegc = <450>;
+	qcom,hot-bat-decidegc = <600>;
+	qcom,fg-iterm-ma = <180>;
+	qcom,fg-chg-iterm-ma = <150>;
+	qcom,fg-cutoff-voltage-mv = <3400>;
+	/* use external rsense for parallel charging */
+	qcom,ext-sense-type;
+	qcom,vbat-estimate-diff-mv = <200>;
+	qcom,fg-cc-cv-threshold-mv = <4390>;
+};
+
+&soc {
+	qcom,bcl {
+		qcom,ibat-monitor {
+			qcom,soc-low-threshold = <0>;
+		};
+	};
+};
