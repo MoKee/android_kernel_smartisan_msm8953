@@ -44,11 +44,23 @@
 			reg = <0x3100 0x100>;
 			#address-cells = <1>;
 			#size-cells = <0>;
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+			interrupts = <0x2 0x31 0x0>,
+				     <0x2 0x31 0x3>,
+				     <0x2 0x31 0x4>;
+			interrupt-names = "eoc-int-en-set",
+					  "high-thr-en-set",
+					  "low-thr-en-set";
+#else
 			interrupts = <0x2 0x31 0x0>;
 			interrupt-names = "eoc-int-en-set";
+#endif
 			qcom,adc-bit-resolution = <15>;
 			qcom,adc-vdd-reference = <1800>;
 			qcom,vadc-poll-eoc;
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+			qcom,vadc-meas-int-mode;
+#endif
 
 			chan@0 {
 				label = "usbin";
@@ -531,6 +543,9 @@
 			qcom,led-strings-list = [00 01];
 			qcom,en-ext-pfet-sc-pro;
 			qcom,cons-sync-write-delay-us = <1000>;
+#ifdef CONFIG_VENDOR_SMARTISAN
+			qcom,en-cabc;
+#endif
 		};
 
 		flash_led: qcom,leds@d300 {
@@ -564,7 +579,11 @@
 				qcom,max-current = <1000>;
 				qcom,duration = <1280>;
 				qcom,id = <0>;
+#ifdef CONFIG_VENDOR_SMARTISAN_OSCAR
+				qcom,current = <1000>;
+#else
 				qcom,current = <625>;
+#endif
 			};
 
 			pmi8950_flash1: qcom,flash_1 {
@@ -575,7 +594,11 @@
 				qcom,max-current = <1000>;
 				qcom,duration = <1280>;
 				qcom,id = <1>;
+#ifdef CONFIG_VENDOR_SMARTISAN_OSCAR
+				qcom,current = <1000>;
+#else
 				qcom,current = <625>;
+#endif
 			};
 
 			pmi8950_torch0: qcom,torch_0 {
@@ -585,7 +608,13 @@
 						"torch0_trigger";
 				qcom,max-current = <200>;
 				qcom,id = <0>;
+#if defined(CONFIG_VENDOR_SMARTISAN_ODIN)
+				qcom,current = <35>;
+#elif defined(CONFIG_VENDOR_SMARTISAN_OSCAR)
+				qcom,current = <60>;
+#else
 				qcom,current = <120>;
+#endif
 			};
 
 			pmi8950_torch1: qcom,torch_1 {
@@ -595,7 +624,13 @@
 						"torch1_trigger";
 				qcom,max-current = <200>;
 				qcom,id = <1>;
+#if defined(CONFIG_VENDOR_SMARTISAN_ODIN)
+				qcom,current = <35>;
+#elif defined(CONFIG_VENDOR_SMARTISAN_OSCAR)
+				qcom,current = <60>;
+#else
 				qcom,current = <120>;
+#endif
 			};
 
 			pmi8950_switch: qcom,switch {
@@ -606,7 +641,11 @@
 				qcom,max-current = <1000>;
 				qcom,duration = <1280>;
 				qcom,id = <2>;
+#ifdef CONFIG_VENDOR_SMARTISAN_OSCAR
+				qcom,current = <1000>;
+#else
 				qcom,current = <625>;
+#endif
 				reg0 {
 					regulator-name = "pon_spare_reg";
 				};

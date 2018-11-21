@@ -246,6 +246,7 @@
 			};
 		};
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 		pm8953_typec: qcom,pm8953_typec@bf00 {
 			compatible = "qcom,qpnp-typec";
 			reg = <0xbf00 0x100>;
@@ -265,6 +266,7 @@
 						"vbus-err",
 						"vconn-oc";
 		};
+#endif
 	};
 
 	pm8953_1: qcom,pm8953@1 {
