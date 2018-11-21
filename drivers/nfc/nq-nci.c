@@ -1105,8 +1105,13 @@ err_clkreq_gpio:
 	gpio_free(platform_data->clkreq_gpio);
 err_ese_gpio:
 	/* optional gpio, not sure was configured in probe */
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+	if (nqx_dev->ese_gpio > 0 && nqx_dev->ese_gpio != -EINVAL)
+		gpio_free(platform_data->ese_gpio);
+#else
 	if (nqx_dev->ese_gpio > 0)
 		gpio_free(platform_data->ese_gpio);
+#endif
 err_firm_gpio:
 	gpio_free(platform_data->firm_gpio);
 err_irq_gpio:
