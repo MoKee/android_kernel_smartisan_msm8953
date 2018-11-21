@@ -67,6 +67,7 @@ obj-y				+= qcom/
 obj-$(CONFIG_TI_DRV2667) += ti_drv2667.o
 ifdef CONFIG_VENDOR_SMARTISAN
 obj-$(CONFIG_USB_CC_WUSB3801X)		+= wusb3801x.o
+obj-$(CONFIG_USB_EXT_TYPE_C_FAIRCHILD)	+= fusb301.o
 endif
 obj-$(CONFIG_USB_EXT_TYPE_C_PERICOM)	+= type-c-pericom.o
 obj-$(CONFIG_USB_EXT_TYPE_C_TI)		+= type-c-ti.o
