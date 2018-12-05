@@ -4155,11 +4155,9 @@ static void update_mac_from_string(hdd_context_t *pHddCtx, tCfgIniEntry *macTabl
  */
 VOS_STATUS hdd_update_mac_config(hdd_context_t *pHddCtx)
 {
-   int status, i = 0, j = 0;
-   char * buf;
+   int status, i = 0;
    const struct firmware *fw = NULL;
-   const char prefix[] = "Intf";
-   const char suffix[] = "MacAddress";
+   char mac0[100], mac1[100];
    tCfgIniEntry macTable[VOS_MAX_CONCURRENCY_PERSONA];
    VOS_STATUS vos_status = VOS_STATUS_SUCCESS;
 
@@ -4181,61 +4179,18 @@ VOS_STATUS hdd_update_mac_config(hdd_context_t *pHddCtx)
       return VOS_STATUS_E_INVAL;
    }
 
-   /* data format:
-    * 00AA00BB00CA00AA00BB00CB00AA00BB00CC00AA00BB00CD
-    */
-
-   for (i = 0; i < VOS_MAX_CONCURRENCY_PERSONA; i++)
-   {
-      int lenPersona = snprintf(NULL, 0, "%d", i);
-
-      char *persona = (char*)vos_mem_vmalloc(lenPersona + 1);
-      if (NULL == persona) {
-         hddLog(VOS_TRACE_LEVEL_FATAL, "%s: kmalloc failure", __func__);
-         vos_status = VOS_STATUS_E_FAILURE;
-         goto config_exit;
-      }
-
-      macTable[i].name = (char*)vos_mem_vmalloc((sizeof(prefix) - 1) + lenPersona + (sizeof(suffix) - 1) + 1);
-      if (NULL == macTable[i].name) {
-         hddLog(VOS_TRACE_LEVEL_FATAL, "%s: kmalloc failure", __func__);
-         vos_status = VOS_STATUS_E_FAILURE;
-         vos_mem_vfree(persona);
-         goto config_exit;
-      }
-
-      macTable[i].value = (char*)vos_mem_vmalloc(NV_FIELD_MAC_ADDR_SIZE * 2 + 1);
-      if (NULL == macTable[i].value) {
-         hddLog(VOS_TRACE_LEVEL_FATAL, "%s: kmalloc failure", __func__);
-         vos_status = VOS_STATUS_E_FAILURE;
-         vos_mem_vfree(persona);
-         goto config_exit;
-      }
-
-      sprintf(persona, "%d", i);
-
-      strcpy(macTable[i].name, prefix);
-      strcat(macTable[i].name, persona);
-      strcat(macTable[i].name, suffix);
-
-      buf = macTable[i].value;
-      for (j = 0; j < NV_FIELD_MAC_ADDR_SIZE; j++)
-      {
-         buf += sprintf(buf, "%02X", fw->data[NV_FIELD_MAC_ADDR_SIZE * i + j]);
-      }
-
-      vos_mem_vfree(persona);
-   }
-
-   if (i <= VOS_MAX_CONCURRENCY_PERSONA) {
-      hddLog(VOS_TRACE_LEVEL_INFO, "%s: %d MAC addresses provided", __func__, i);
-   }
-   else {
+   i = sscanf((char *)fw->data, "Intf0MacAddress=%s Intf1MacAddress=%s END", mac0, mac1);
+   if (i != 2) {
       hddLog(VOS_TRACE_LEVEL_ERROR, "%s: invalid number of MAC address provided, nMac = %d",
              __func__, i);
       vos_status = VOS_STATUS_E_INVAL;
       goto config_exit;
    }
+
+   macTable[0].name = "Intf0MacAddress";
+   macTable[0].value = mac0;
+   macTable[1].name = "Intf1MacAddress";
+   macTable[1].value = mac1;
 
    update_mac_from_string(pHddCtx, &macTable[0], i);
 
