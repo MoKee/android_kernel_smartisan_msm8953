@@ -37,6 +37,11 @@
 #define XO_CLK_RATE	19200000
 #define CMDLINE_DSI_CTL_NUM_STRING_LEN 2
 
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+#define LCD_SELECT_GPIO1	92
+#define LCD_SELECT_GPIO2_DVT	91
+#endif
+
 /* Master structure to hold all the information about the DSI/panel */
 static struct mdss_dsi_data *mdss_dsi_res;
 
@@ -276,6 +281,10 @@ static int mdss_dsi_panel_power_off(struct mdss_panel_data *pdata)
 {
 	int ret = 0;
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+	uint32_t gpio_id1 = 0;
+	uint32_t gpio_id2 = 0;
+#endif
 
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
@@ -285,12 +294,33 @@ static int mdss_dsi_panel_power_off(struct mdss_panel_data *pdata)
 
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+	gpio_id1 = gpio_get_value(LCD_SELECT_GPIO1);
+	gpio_id2 = gpio_get_value(LCD_SELECT_GPIO2_DVT);
+#endif
 
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+if (gpio_id1 == 1 && gpio_id2 == 1) {
+	if (gpio_is_valid(ctrl_pdata->bklt_en_gpio)) {
+		gpio_free(ctrl_pdata->bklt_en_gpio);
+	}
+	if (gpio_is_valid(ctrl_pdata->disp_en_gpio)) {
+		gpio_free(ctrl_pdata->disp_en_gpio);
+	}
+	gpio_free(ctrl_pdata->rst_gpio);
+	if (gpio_is_valid(ctrl_pdata->mode_gpio)) {
+		gpio_free(ctrl_pdata->mode_gpio);
+	}
+} else {
+#endif
 	ret = mdss_dsi_panel_reset(pdata, 0);
 	if (ret) {
 		pr_warn("%s: Panel reset failed. rc=%d\n", __func__, ret);
 		ret = 0;
 	}
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+}
+#endif
 
 	if (mdss_dsi_pinctrl_set_state(ctrl_pdata, false))
 		pr_debug("reset disable: pinctrl not enabled\n");
@@ -2799,13 +2829,37 @@ static struct device_node *mdss_dsi_pref_prim_panel(
 		struct platform_device *pdev)
 {
 	struct device_node *dsi_pan_node = NULL;
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+	uint32_t gpio_id1 = 0;
+	uint32_t gpio_id2 = 0;
+#endif
 
 	pr_debug("%s:%d: Select primary panel from dt\n",
 					__func__, __LINE__);
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+	gpio_id1 = gpio_get_value(LCD_SELECT_GPIO1);
+	gpio_id2 = gpio_get_value(LCD_SELECT_GPIO2_DVT);
+	if (gpio_id1 == 0 && gpio_id2 == 1) {
+		dsi_pan_node = of_parse_phandle(pdev->dev.of_node,
+					"qcom,dsi-pref-prim-panA", 0);
+	} else if (gpio_id1 == 1 && gpio_id2 == 1) {
+		dsi_pan_node = of_parse_phandle(pdev->dev.of_node,
+					"qcom,dsi-pref-prim-panB", 0);
+	} else if (gpio_id1 == 0 && gpio_id2 == 0) {
+		dsi_pan_node = of_parse_phandle(pdev->dev.of_node,
+					"qcom,dsi-pref-prim-panC", 0);
+	}
+	if (!dsi_pan_node) {
+		pr_err("%s:can't find panel phandle\n", __func__);
+		dsi_pan_node = of_parse_phandle(pdev->dev.of_node,
+					"qcom,dsi-pref-prim-panA", 0);
+	}
+#else
 	dsi_pan_node = of_parse_phandle(pdev->dev.of_node,
 					"qcom,dsi-pref-prim-pan", 0);
 	if (!dsi_pan_node)
 		pr_err("%s:can't find panel phandle\n", __func__);
+#endif
 
 	return dsi_pan_node;
 }
