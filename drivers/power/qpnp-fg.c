@@ -310,6 +310,11 @@ static struct fg_mem_data fg_backup_regs[FG_BACKUP_MAX] = {
 	BACKUP(MAH_TO_SOC,	0x4A0,   0,      4,     -EINVAL),
 };
 
+#ifdef CONFIG_VENDOR_SMARTISAN_OSCAR
+extern int  synaptics_adjust_charging_status(bool status);
+int charging_status = 0;
+#endif
+
 static int fg_debug_mask;
 module_param_named(
 	debug_mask, fg_debug_mask, int, S_IRUSR | S_IWUSR
@@ -4027,6 +4032,18 @@ static void status_change_work(struct work_struct *work)
 			pr_info("Battery is missing\n");
 		return;
 	}
+
+#ifdef CONFIG_VENDOR_SMARTISAN_OSCAR
+	if (chip->status == POWER_SUPPLY_STATUS_DISCHARGING) {
+		pr_err("wuyx---------status_change_work-------discharging-----\n");
+		synaptics_adjust_charging_status(false);
+		charging_status = 0;
+	} else if (chip->status == POWER_SUPPLY_STATUS_CHARGING) {
+		pr_err("wuyx---------status_change_work-------charging-----\n");
+		synaptics_adjust_charging_status(true);
+		charging_status = 1;
+	}
+#endif
 
 	if (chip->esr_pulse_tune_en) {
 		fg_stay_awake(&chip->esr_extract_wakeup_source);
