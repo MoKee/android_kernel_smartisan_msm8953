@@ -176,3 +176,6 @@ obj-$(CONFIG_SENSORS_SSC)	+= sensors/
 ifdef CONFIG_VENDOR_SMARTISAN
 obj-y += smartisan/
 endif
+ifdef CONFIG_VENDOR_SMARTISAN_OSCAR
+obj-y += elliptic/
+endif
