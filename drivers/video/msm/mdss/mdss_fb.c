@@ -76,6 +76,11 @@
 #define BLANK_FLAG_ULP	FB_BLANK_NORMAL
 #endif
 
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+#define LCD_SELECT_GPIO1	92
+#define LCD_SELECT_GPIO2_DVT	91
+#endif
+
 /*
  * Time period for fps calulation in micro seconds.
  * Default value is set to 1 sec.
@@ -886,6 +891,31 @@ static ssize_t mdss_fb_get_persist_mode(struct device *dev,
 	return ret;
 }
 
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+static ssize_t mdss_fb_get_panelid(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	uint32_t gpio_id1 = 0;
+	uint32_t gpio_id2 = 0;
+	int ret;
+
+	gpio_id1 = gpio_get_value(LCD_SELECT_GPIO1);
+	gpio_id2 = gpio_get_value(LCD_SELECT_GPIO2_DVT);
+
+	if (gpio_id1 == 0 && gpio_id2 == 1) {
+		ret = scnprintf(buf, PAGE_SIZE, "%d", 1);
+	} else if (gpio_id1 == 1 && gpio_id2 == 1) {
+		ret = scnprintf(buf, PAGE_SIZE, "%d", 2);
+	} else if (gpio_id1 == 0 && gpio_id2 == 0) {
+		ret = scnprintf(buf, PAGE_SIZE, "%d", 3);
+	} else {
+		ret = scnprintf(buf, PAGE_SIZE, "%d", 0);
+	}
+
+	return ret;
+}
+#endif
+
 static DEVICE_ATTR(msm_fb_type, S_IRUGO, mdss_fb_get_type, NULL);
 static DEVICE_ATTR(msm_fb_split, S_IRUGO | S_IWUSR, mdss_fb_show_split,
 					mdss_fb_store_split);
@@ -906,6 +936,9 @@ static DEVICE_ATTR(measured_fps, S_IRUGO | S_IWUSR | S_IWGRP,
 	mdss_fb_get_fps_info, NULL);
 static DEVICE_ATTR(msm_fb_persist_mode, S_IRUGO | S_IWUSR,
 	mdss_fb_get_persist_mode, mdss_fb_change_persist_mode);
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+static DEVICE_ATTR(show_panel_id, S_IRUGO , mdss_fb_get_panelid, NULL);
+#endif
 static struct attribute *mdss_fb_attrs[] = {
 	&dev_attr_msm_fb_type.attr,
 	&dev_attr_msm_fb_split.attr,
@@ -919,6 +952,9 @@ static struct attribute *mdss_fb_attrs[] = {
 	&dev_attr_msm_fb_dfps_mode.attr,
 	&dev_attr_measured_fps.attr,
 	&dev_attr_msm_fb_persist_mode.attr,
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+	&dev_attr_show_panel_id.attr,
+#endif
 	NULL,
 };
 
@@ -1833,6 +1869,10 @@ static int mdss_fb_blank_blank(struct msm_fb_data_type *mfd,
 {
 	int ret = 0;
 	int cur_power_state, current_bl;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	struct fb_event event;
+	event.info = mfd->fbi;
+#endif
 
 	if (!mfd)
 		return -EINVAL;
@@ -1849,6 +1889,13 @@ static int mdss_fb_blank_blank(struct msm_fb_data_type *mfd,
 		pr_debug("No change in power state\n");
 		return 0;
 	}
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+	if (mfd->index == 0) {
+		printk("call LCD_EVENT_OFF by fb\n");
+		fb_notifier_call_chain(LCD_EVENT_OFF, &event);
+	}
+#endif
 
 	mutex_lock(&mfd->update.lock);
 	mfd->update.type = NOTIFY_TYPE_SUSPEND;
@@ -1892,6 +1939,10 @@ static int mdss_fb_blank_unblank(struct msm_fb_data_type *mfd)
 {
 	int ret = 0;
 	int cur_power_state;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	struct fb_event event;
+	event.info = mfd->fbi;
+#endif
 
 	if (!mfd)
 		return -EINVAL;
@@ -1971,6 +2022,13 @@ static int mdss_fb_blank_unblank(struct msm_fb_data_type *mfd)
 		}
 		mutex_unlock(&mfd->bl_lock);
 	}
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+	if (mfd->index == 0) {
+		printk("call LCD_EVENT_ON by fb\n");
+		fb_notifier_call_chain(LCD_EVENT_ON, &event);
+	}
+#endif
 
 error:
 	return ret;
@@ -2777,7 +2835,11 @@ static int mdss_fb_open(struct fb_info *info, int user)
 		goto pm_error;
 	}
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+	if (!mfd->ref_cnt && mfd->index) {  //fb0 do not blank here
+#else
 	if (!mfd->ref_cnt) {
+#endif
 		result = mdss_fb_blank_sub(FB_BLANK_UNBLANK, info,
 					   mfd->op_enable);
 		if (result) {
@@ -2898,7 +2960,16 @@ static int mdss_fb_release_all(struct fb_info *info, bool release_all)
 
 static int mdss_fb_release(struct fb_info *info, int user)
 {
+#ifdef CONFIG_VENDOR_SMARTISAN
+	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)info->par;
+	if (mfd->index) { //only for wfd, fb0 do not release here
+		return mdss_fb_release_all(info, false);
+	} else {
+		return 0;
+	}
+#else
 	return mdss_fb_release_all(info, false);
+#endif
 }
 
 static void mdss_fb_power_setting_idle(struct msm_fb_data_type *mfd)
@@ -4815,6 +4886,7 @@ static int __ioctl_wait_idle(struct msm_fb_data_type *mfd, u32 cmd)
 	return ret;
 }
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 #ifdef TARGET_HW_MDSS_MDP3
 static bool check_not_supported_ioctl(u32 cmd)
 {
@@ -4830,6 +4902,7 @@ static bool check_not_supported_ioctl(u32 cmd)
 		(cmd == MSMFB_NOTIFY_UPDATE));
 }
 #endif
+#endif // CONFIG_VENDOR_SMARTISAN
 
 /*
  * mdss_fb_do_ioctl() - MDSS Framebuffer ioctl function
@@ -4865,10 +4938,12 @@ int mdss_fb_do_ioctl(struct fb_info *info, unsigned int cmd,
 	if (!pdata || pdata->panel_info.dynamic_switch_pending)
 		return -EPERM;
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 	if (check_not_supported_ioctl(cmd)) {
 		pr_err("Unsupported ioctl\n");
 		return -EINVAL;
 	}
+#endif
 
 	atomic_inc(&mfd->ioctl_ref_cnt);
 
