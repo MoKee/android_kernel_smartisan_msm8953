@@ -6,6 +6,9 @@ snd-soc-qdsp6v2-objs += msm-dai-q6-v2.o msm-pcm-q6-v2.o msm-pcm-routing-v2.o \
 			msm-lsm-client.o msm-pcm-host-voice-v2.o \
 			msm-audio-effects-q6-v2.o msm-pcm-loopback-v2.o \
 			adsp_err.o
+ifdef CONFIG_VENDOR_SMARTISAN_OSCAR
+snd-soc-qdsp6v2-objs += apr_elliptic.o
+endif
 obj-$(CONFIG_SLIMBUS) += msm-dai-slim.o audio_slimslave.o
 obj-$(CONFIG_SND_SOC_QDSP6V2) += snd-soc-qdsp6v2.o msm-pcm-dtmf-v2.o \
 				 msm-dai-stub-v2.o
@@ -20,3 +23,7 @@ obj-y += audio_calibration.o audio_cal_utils.o q6adm.o q6afe.o q6asm.o \
 	q6audio-v2.o q6voice.o q6core.o rtac.o q6lsm.o msm-pcm-q6-noirq.o
 ocmem-audio-objs += audio_ocmem.o
 obj-$(CONFIG_AUDIO_OCMEM) += ocmem-audio.o
+
+ifdef CONFIG_VENDOR_SMARTISAN_OSCAR
+EXTRA_CFLAGS += -I$(srctree)
+endif
