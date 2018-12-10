@@ -278,7 +278,8 @@ static int __init set_init_arg(char *param, char *val,
 }
 
 #ifdef CONFIG_VENDOR_SMARTISAN
-static int __init init_board_id(char *param, char *val, const char *unused)
+static int __init init_board_id(char *param, char *val,
+			       const char *unused, void *arg)
 {
 	int i;
 
@@ -579,7 +580,7 @@ asmlinkage __visible void __init start_kernel(void)
 
 #ifdef CONFIG_VENDOR_SMARTISAN
 	parse_args("Initiate Board ID", boot_command_line,
-			NULL, 0, 0, 0, &init_board_id);
+			NULL, 0, 0, 0, NULL, &init_board_id);
 #endif
 
 	jump_label_init();
