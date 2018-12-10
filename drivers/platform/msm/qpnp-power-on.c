@@ -2428,6 +2428,11 @@ static int qpnp_pon_probe(struct spmi_device *spmi)
 					spmi->dev.of_node,
 					"qcom,store-hard-reset-reason");
 
+#ifdef CONFIG_VENDOR_SMARTISAN_OSCAR
+	/* Determine volum_down initial status */
+	qpnp_pon_input_dispatch(pon, PON_RESIN);
+#endif
+
 	qpnp_pon_debugfs_init(spmi);
 	return 0;
 }
