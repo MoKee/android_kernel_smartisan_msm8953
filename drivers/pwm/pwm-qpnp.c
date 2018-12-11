@@ -2108,6 +2108,9 @@ static int qpnp_pwm_probe(struct spmi_device *spmi)
 {
 	struct qpnp_pwm_chip	*pwm_chip;
 	int			rc;
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+	u8			value;
+#endif
 
 	pwm_chip = kzalloc(sizeof(*pwm_chip), GFP_KERNEL);
 	if (pwm_chip == NULL) {
@@ -2140,6 +2143,14 @@ static int qpnp_pwm_probe(struct spmi_device *spmi)
 
 	if (pwm_chip->channel_owner)
 		pwm_chip->chip.pwms[0].label = pwm_chip->channel_owner;
+
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+	value = 0xA5;
+	spmi_ext_register_writel(pwm_chip->spmi_dev->ctrl, 1, 0xBCD0, &value, 1);
+
+	value = 0x02;
+	spmi_ext_register_writel(pwm_chip->spmi_dev->ctrl, 1, 0xBCE3, &value, 1);
+#endif
 
 	pr_debug("PWM device sid:%d channel:%d probed successfully\n",
 		spmi->sid, pwm_chip->channel_id);
