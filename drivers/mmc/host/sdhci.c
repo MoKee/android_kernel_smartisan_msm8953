@@ -801,6 +801,13 @@ static u8 sdhci_calc_timeout(struct sdhci_host *host, struct mmc_command *cmd)
 	if (!data && !cmd->busy_timeout)
 		return 0xE;
 
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+	if (strcmp(mmc_hostname(host->mmc), "mmc1") == 0 &&
+	    cmd->opcode == MMC_READ_MULTIPLE_BLOCK &&
+	    mmc_card_hs(host->mmc->card))
+		return 0xE;
+#endif
+
 	/* timeout in us */
 	if (!data)
 		target_timeout = cmd->busy_timeout * 1000;
@@ -1272,6 +1279,13 @@ void sdhci_send_command(struct sdhci_host *host, struct mmc_command *cmd)
 		sdhci_readl(host, SDHCI_ARGUMENT),
 		sdhci_readw(host, SDHCI_TRANSFER_MODE),
 		sdhci_readw(host, SDHCI_COMMAND));
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+	if (strcmp(mmc_hostname(host->mmc), "mmc1") == 0 &&
+	    cmd->opcode == MMC_READ_MULTIPLE_BLOCK &&
+	    mmc_card_hs(host->mmc->card)) {
+		mdelay(3);
+	}
+#endif
 	sdhci_writew(host, SDHCI_MAKE_CMD(cmd->opcode, flags), SDHCI_COMMAND);
 }
 EXPORT_SYMBOL_GPL(sdhci_send_command);
