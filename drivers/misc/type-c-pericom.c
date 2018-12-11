@@ -22,6 +22,9 @@
 
 #define PERICOM_I2C_NAME	"usb-type-c-pericom"
 #define PERICOM_I2C_DELAY_MS	30
+#ifdef CONFIG_VENDOR_SMARTISAN
+#define PERICOM_DEVICE_ID	0x20
+#endif
 
 #define CCD_DEFAULT		0x1
 #define CCD_MEDIUM		0x2
@@ -50,7 +53,11 @@ struct piusb_regs {
 	u8		control;
 #define CTL_MODE_UFP	(0x0)
 #define CTL_MODE_DFP	(0x2)
+#ifdef CONFIG_VENDOR_SMARTISAN
+#define CTL_MODE_DRP	(0x46)
+#else
 #define CTL_MODE_DRP	(0x4)
+#endif
 #define CTL_MODE_MASK	(0x6)	      /* Port setting - ufp/dfp/drp */
 	u8		intr_status;
 #define	INTS_ATTACH	0x1
@@ -72,8 +79,15 @@ struct pi_usb_type_c {
 	struct power_supply		*usb_psy;
 	int				max_current;
 	bool				attach_state;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	bool				initialised;
+#endif
 	int				enb_gpio;
 	int				enb_gpio_polarity;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	int				usb_switch_asel;
+	int				hs_det;
+#endif
 	struct regulator		*i2c_1p8;
 	struct dual_role_phy_instance	*dual_role;
 	struct dual_role_phy_desc	dr_desc;
@@ -90,12 +104,128 @@ static enum dual_role_property pi_usb_dr_properties[] = {
 	DUAL_ROLE_PROP_DR,
 };
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+enum SW_SELECTION {
+	SW_USB,
+	SW_AUDIO,
+};
+
+enum AUDIO_DETECTION {
+	AUDIO_INSERT,
+	AUDIO_REMOVE,
+};
+#endif
+
 /* requested mode */
 static char *dual_mode_text[] = {
 	"ufp", "dfp", "none"
 };
 
 static int piusb_i2c_enable(struct pi_usb_type_c *pi, bool enable, u8 mode);
+#ifdef CONFIG_VENDOR_SMARTISAN
+static int piusb_i2c_write(struct pi_usb_type_c *pi, u8 *data, int len);
+
+static ssize_t usb_switch_asel_show(struct device *dev,
+				struct device_attribute *attr,
+				char *buf)
+{
+	int ret;
+	ret = snprintf(buf, PAGE_SIZE, "%s\n",
+			gpio_get_value_cansleep(pi_usb->usb_switch_asel) ? "audio" : "usb");
+	return ret;
+}
+
+static ssize_t usb_switch_asel_store(struct device *dev,
+				struct device_attribute *attr,
+				const char *buff, size_t size)
+{
+	int gpio = -1;
+
+	if (!strncmp("usb", buff, strlen("usb")))
+		gpio = 0;
+	else if (!strncmp("audio", buff, strlen("audio")))
+		gpio = 1;
+
+	if (gpio >= 0) {
+		gpio_set_value_cansleep(pi_usb->usb_switch_asel, gpio);
+		return size;
+	}
+	return -EINVAL;
+}
+
+static DEVICE_ATTR(usb_switch_asel, S_IRUGO | S_IWUSR,\
+                usb_switch_asel_show, usb_switch_asel_store);
+
+static ssize_t hs_det_show(struct device *dev,
+				struct device_attribute *attr,
+				char *buf)
+{
+	int ret;
+	ret = snprintf(buf, PAGE_SIZE, "%d\n",
+			gpio_get_value_cansleep(pi_usb->hs_det));
+	return ret;
+}
+
+static ssize_t hs_det_store(struct device *dev,
+				struct device_attribute *attr,
+				const char *buff, size_t size)
+{
+	int buf = 0;
+	if ((sscanf(buff, "%d", &buf) == 1) && (buf >= 0)) {
+		gpio_set_value_cansleep(pi_usb->hs_det, !!buf);
+		return size;
+	}
+	return -EINVAL;
+}
+
+static DEVICE_ATTR(hs_det, S_IRUGO | S_IWUSR,\
+                hs_det_show, hs_det_store);
+
+static void switch_select(struct device *dev, enum SW_SELECTION value) {
+	switch (value) {
+	case SW_USB:
+		dev_dbg(dev, "select usb side.\n");
+		if (gpio_get_value_cansleep(pi_usb->usb_switch_asel))
+			gpio_set_value_cansleep(pi_usb->usb_switch_asel, 0); /* select usb */
+		break;
+	case SW_AUDIO:
+		dev_dbg(dev, "select audio side.\n");
+		if (!gpio_get_value_cansleep(pi_usb->usb_switch_asel))
+			gpio_set_value_cansleep(pi_usb->usb_switch_asel, 1); /* select audio */
+		break;
+	default:
+		dev_err(dev, "%s: value: %d is not valid.\n", __func__, value);
+		break;
+	}
+}
+
+static void audio_trigger(struct device *dev, enum AUDIO_DETECTION value) {
+	switch (value) {
+	case AUDIO_INSERT:
+		dev_dbg(dev, "trigger insert detection.\n");
+		if (gpio_get_value_cansleep(pi_usb->hs_det))
+			gpio_set_value_cansleep(pi_usb->hs_det, 0); /* insert */
+		break;
+	case AUDIO_REMOVE:
+		dev_dbg(dev, "trigger remove detection.\n");
+		if (!gpio_get_value_cansleep(pi_usb->hs_det))
+			gpio_set_value_cansleep(pi_usb->hs_det, 1); /* remove */
+		break;
+	default:
+		dev_err(dev, "%s: value: %d is not valid.\n", __func__, value);
+		break;
+	}
+}
+
+static int piusb_read_device_id(struct pi_usb_type_c *pi)
+{
+	int rc;
+	rc = i2c_smbus_read_byte_data(pi->client, 0x01);
+	if (IS_ERR_VALUE(rc))
+		return -ENXIO;
+	return rc;
+}
+#endif
 
 static int piusb_read_regdata(struct i2c_client *i2c)
 {
@@ -181,10 +311,49 @@ static void piusb_update_max_current(struct pi_usb_type_c *pi_usb)
 							pi_usb->max_current);
 }
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+static void pericom_attach(void)
+{
+	struct device *dev = &pi_usb->client->dev;
+	int port_status = (pi_usb->reg_data.port_status >> 2) & 0x07;
+
+	dev_dbg(dev, "port_status: 0x%x\n", port_status);
+	switch(port_status) {
+	case 3: // Audio Adapter Accessory
+		dev_dbg(dev, "Audio Adapter Accessory plug in.\n");
+		switch_select(dev, SW_AUDIO);
+		audio_trigger(dev, AUDIO_INSERT);
+		break;
+	default:
+		switch_select(dev, SW_USB);
+		if (pi_usb->dual_role)
+			dual_role_instance_changed(pi_usb->dual_role);
+		break;
+	}
+}
+
+static void pericom_detach(bool initialised)
+{
+	struct device *dev = &pi_usb->client->dev;
+
+	audio_trigger(dev, AUDIO_REMOVE);
+	if (pi_usb->dual_role)
+		dual_role_instance_changed(pi_usb->dual_role);
+	if (initialised)
+		switch_select(dev, SW_AUDIO);
+}
+#endif
+
 static irqreturn_t piusb_irq(int irq, void *data)
 {
 	int ret;
 	struct pi_usb_type_c *pi_usb = (struct pi_usb_type_c *)data;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	u8 mask_buf[] = {0, 0x47};
+	u8 unmask_buf[] = {0, 0x46};
+
+	piusb_i2c_write(pi_usb, mask_buf, sizeof(mask_buf));
+#endif
 
 	/* i2c register update takes time, 30msec sleep required as per HPG */
 	msleep(PERICOM_I2C_DELAY_MS);
@@ -204,12 +373,28 @@ static irqreturn_t piusb_irq(int irq, void *data)
 	mutex_unlock(&pi_usb->mutex);
 
 	/* On detach, go back to DRP if there is no immediate attach */
+#ifdef CONFIG_VENDOR_SMARTISAN
+	if (pi_usb->attach_state) {
+		cancel_delayed_work_sync(&pi_usb->handle_detach_work);
+		pericom_attach();
+	} else if (pi_usb->current_mode != CTL_MODE_DRP) {
+		pericom_detach(pi_usb->initialised);
+		schedule_delayed_work(&pi_usb->handle_detach_work,
+				msecs_to_jiffies(detach_debounce_delay_ms));
+	} else {
+		pericom_detach(pi_usb->initialised);
+	}
+#else
 	if (pi_usb->attach_state)
 		cancel_delayed_work_sync(&pi_usb->handle_detach_work);
 	else if (pi_usb->current_mode != CTL_MODE_DRP)
 		schedule_delayed_work(&pi_usb->handle_detach_work,
 				msecs_to_jiffies(detach_debounce_delay_ms));
+#endif
 out:
+#ifdef CONFIG_VENDOR_SMARTISAN
+	piusb_i2c_write(pi_usb, unmask_buf, sizeof(unmask_buf));
+#endif
 	return IRQ_HANDLED;
 }
 
@@ -236,7 +421,11 @@ static int piusb_i2c_write(struct pi_usb_type_c *pi, u8 *data, int len)
 
 static int piusb_i2c_enable(struct pi_usb_type_c *pi, bool enable, u8 port_mode)
 {
+#ifdef CONFIG_VENDOR_SMARTISAN
+	u8 rst_assert[] = {0, 0x81};     //reset
+#else
 	u8 rst_assert[] = {0, 0x1};
+#endif
 	u8 rst_deassert[] = {0, port_mode};
 	u8 pi_disable[] = {0, 0x80};
 
@@ -470,6 +659,14 @@ static int piusb_probe(struct i2c_client *i2c, const struct i2c_device_id *id)
 	pi_usb->client = i2c;
 	pi_usb->usb_psy = usb_psy;
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+	ret = piusb_read_device_id(pi_usb);
+	if (ret != PERICOM_DEVICE_ID) {
+		dev_err(&i2c->dev, "pericom of typec not used.\n");
+		goto out;
+	}
+#endif
+
 	if (i2c->irq < 0) {
 		dev_err(&i2c->dev, "irq not defined (%d)\n", i2c->irq);
 		ret = -EINVAL;
@@ -480,6 +677,56 @@ static int piusb_probe(struct i2c_client *i2c, const struct i2c_device_id *id)
 	if (!disable_on_suspend)
 		disable_on_suspend = of_property_read_bool(np,
 						"pericom,disable-on-suspend");
+#ifdef CONFIG_VENDOR_SMARTISAN
+	pi_usb->usb_switch_asel = of_get_named_gpio(np,
+				"qcom,usb_switch_asel", 0);
+	if (!gpio_is_valid(pi_usb->usb_switch_asel)) {
+		dev_err(&i2c->dev, "usb_switch_asel fail:%d\n", pi_usb->usb_switch_asel);
+		ret = pi_usb->usb_switch_asel;
+		goto out;
+	} else {
+		/*
+		 * The default config of usb_switch_asel in devicetree is output low
+		 */
+		ret = devm_gpio_request(&i2c->dev, pi_usb->usb_switch_asel, "usb_switch_asel");
+		if (ret) {
+			dev_err(&i2c->dev, "request usb_switch_asel %d failed: %d\n",
+				pi_usb->usb_switch_asel, ret);
+			goto out;
+		}
+	}
+
+	pi_usb->hs_det = of_get_named_gpio(np,
+				"qcom,cdc_hsdet_l", 0);
+	if (!gpio_is_valid(pi_usb->hs_det)) {
+		dev_err(&i2c->dev, "cdc_hsdet_l fail:%d\n", pi_usb->hs_det);
+		ret = pi_usb->hs_det;
+		goto out;
+	} else {
+		/*
+		 * The default config of hs_det in devicetree is output high
+		 */
+		ret = devm_gpio_request(&i2c->dev, pi_usb->hs_det, "cdc_hsdet_l");
+		if (ret) {
+			dev_err(&i2c->dev, "request cdc_hsdet_l %d failed: %d\n",
+				pi_usb->hs_det, ret);
+			goto out;
+		}
+	}
+
+	ret = device_create_file(&i2c->dev, &dev_attr_usb_switch_asel);
+	if (ret < 0) {
+		dev_err(&i2c->dev, "failed to create dev_attr_usb_switch_asel\n");
+		goto out;
+	}
+
+	ret = device_create_file(&i2c->dev, &dev_attr_hs_det);
+	if (ret < 0) {
+		dev_err(&i2c->dev, "failed to create dev_attr_hs_det\n");
+		goto err0;
+	}
+#endif
+
 	pi_usb->enb_gpio = of_get_named_gpio_flags(np, "pericom,enb-gpio", 0,
 							&flags);
 	if (!gpio_is_valid(pi_usb->enb_gpio)) {
@@ -488,7 +735,11 @@ static int piusb_probe(struct i2c_client *i2c, const struct i2c_device_id *id)
 		pi_usb->enb_gpio_polarity = !(flags & OF_GPIO_ACTIVE_LOW);
 		ret = piusb_gpio_config(pi_usb, true);
 		if (ret)
+#ifdef CONFIG_VENDOR_SMARTISAN
+			goto err1;
+#else
 			goto out;
+#endif
 	}
 
 	ret = piusb_ldo_init(pi_usb, true);
@@ -506,7 +757,13 @@ static int piusb_probe(struct i2c_client *i2c, const struct i2c_device_id *id)
 
 	mutex_init(&pi_usb->mutex);
 	/* Update initial state to USB */
+#ifdef CONFIG_VENDOR_SMARTISAN
+	pi_usb->initialised = false;
+#endif
 	piusb_irq(i2c->irq, pi_usb);
+#ifdef CONFIG_VENDOR_SMARTISAN
+	pi_usb->initialised = true;
+#endif
 
 	ret = devm_request_threaded_irq(&i2c->dev, i2c->irq, NULL, piusb_irq,
 					IRQF_ONESHOT | IRQF_TRIGGER_FALLING,
@@ -521,6 +778,9 @@ static int piusb_probe(struct i2c_client *i2c, const struct i2c_device_id *id)
 	 */
 	pi_usb->dr_desc.name = "otg_default";
 	pi_usb->dr_desc.supported_modes = DUAL_ROLE_SUPPORTED_MODES_DFP_AND_UFP;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	pi_usb->dr_desc.cc_vendor = DUAL_ROLE_CC_PERICOM;
+#endif
 	pi_usb->dr_desc.properties = pi_usb_dr_properties;
 	pi_usb->dr_desc.num_properties = ARRAY_SIZE(pi_usb_dr_properties);
 	pi_usb->dr_desc.get_property = piusb_dr_get_property;
@@ -546,7 +806,17 @@ ldo_disable:
 gpio_disable:
 	if (gpio_is_valid(pi_usb->enb_gpio))
 		piusb_gpio_config(pi_usb, false);
+#ifdef CONFIG_VENDOR_SMARTISAN
+err1:
+	device_remove_file(&i2c->dev, &dev_attr_hs_det);
+err0:
+	device_remove_file(&i2c->dev, &dev_attr_usb_switch_asel);
+#endif
 out:
+#ifdef CONFIG_VENDOR_SMARTISAN
+	i2c_set_clientdata(i2c, NULL);
+	devm_kfree(&i2c->dev, pi_usb);
+#endif
 	return ret;
 }
 
@@ -558,6 +828,10 @@ static int piusb_remove(struct i2c_client *i2c)
 	piusb_ldo_init(pi_usb, false);
 	if (gpio_is_valid(pi_usb->enb_gpio))
 		piusb_gpio_config(pi_usb, false);
+#ifdef CONFIG_VENDOR_SMARTISAN
+	device_remove_file(&i2c->dev, &dev_attr_hs_det);
+	device_remove_file(&i2c->dev, &dev_attr_usb_switch_asel);
+#endif
 	devm_kfree(&i2c->dev, pi_usb);
 
 	return 0;
