@@ -33,6 +33,11 @@
 #define SOCINFO_VERSION(maj, min)  ((((maj) & 0xffff) << 16)|((min) & 0xffff))
 
 #ifdef CONFIG_OF
+#ifdef CONFIG_VENDOR_SMARTISAN
+#define of_board_is_odin()	of_machine_is_compatible("qcom,odin")
+#define of_board_is_odin_p1()	of_machine_is_compatible("qcom,odin-p1")
+#endif
+
 #define of_board_is_cdp()	of_machine_is_compatible("qcom,cdp")
 #define of_board_is_sim()	of_machine_is_compatible("qcom,sim")
 #define of_board_is_rumi()	of_machine_is_compatible("qcom,rumi")
@@ -53,6 +58,9 @@
 #define machine_is_msm8226()	of_machine_is_compatible("qcom,msm8226")
 #define machine_is_apq8074()	of_machine_is_compatible("qcom,apq8074")
 #define machine_is_msm8926()	of_machine_is_compatible("qcom,msm8926")
+#ifdef CONFIG_VENDOR_SMARTISAN
+#define machine_is_msm8953()	of_machine_is_compatible("qcom,msm8953")
+#endif
 
 #define early_machine_is_msm8610()	\
 	of_flat_dt_is_compatible(of_get_flat_dt_root(), "qcom,msm8610")
