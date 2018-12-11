@@ -289,6 +289,18 @@ u32 log_buf_len_get(void)
 {
 	return log_buf_len;
 }
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+u32* log_first_idx_get(void)
+{
+	return &log_first_idx;
+}
+
+u32* log_next_idx_get(void)
+{
+	return &log_next_idx;
+}
+#endif
 #if defined(CONFIG_LOG_BUF_MAGIC)
 static u32 __log_align __used = LOG_ALIGN;
 #define LOG_MAGIC(msg) ((msg)->magic = 0x5d7aefca)

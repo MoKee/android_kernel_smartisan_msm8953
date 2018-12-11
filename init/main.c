@@ -148,6 +148,11 @@ EXPORT_SYMBOL_GPL(static_key_initialized);
 unsigned int reset_devices;
 EXPORT_SYMBOL(reset_devices);
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+unsigned int platform_board_id;
+EXPORT_SYMBOL(platform_board_id);
+#endif
+
 static int __init set_reset_devices(char *str)
 {
 	reset_devices = 1;
@@ -271,6 +276,28 @@ static int __init set_init_arg(char *param, char *val,
 	argv_init[i] = param;
 	return 0;
 }
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+static int __init init_board_id(char *param, char *val, const char *unused)
+{
+	int i;
+
+	for (i = 0; argv_init[i]; i++) {
+		if (i == MAX_INIT_ARGS) {
+			panic_later = "init";
+			panic_param = param;
+			return 0;
+		}
+
+		if (!strncmp(param, "board_id", 8)) {
+			platform_board_id = (unsigned int)simple_strtol(val, NULL, 0);
+			break;
+		}
+	}
+
+	return 0;
+}
+#endif
 
 /*
  * Unknown boot options get handed to init, unless they look like
@@ -549,6 +576,11 @@ asmlinkage __visible void __init start_kernel(void)
 	if (!IS_ERR_OR_NULL(after_dashes))
 		parse_args("Setting init args", after_dashes, NULL, 0, -1, -1,
 			   NULL, set_init_arg);
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+	parse_args("Initiate Board ID", boot_command_line,
+			NULL, 0, 0, 0, &init_board_id);
+#endif
 
 	jump_label_init();
 
