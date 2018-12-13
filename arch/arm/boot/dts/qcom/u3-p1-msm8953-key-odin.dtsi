@@ -45,7 +45,7 @@
 			label = "key_home";
 			gpios = <&tlmm 87 0x1>;
 			linux,input-type = <1>;
-			linux,code = <102>;
+			linux,code = <172>;
 			debounce-interval = <15>;
 			gpio-key,wakeup;
 		};
