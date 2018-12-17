@@ -430,7 +430,7 @@ static int ix_register_input_device(struct ix_data *ix_btp)
 	}
 
 	ix_btp->input->name = "fingerprint";
-	ix_btp->input->dev.init_name = "cb_fingerprint";
+	ix_btp->input->dev.init_name = "ix_btp";
 
 	input_set_capability(ix_btp->input, EV_REL, ix_INTERRUPT);
 	input_set_drvdata(ix_btp->input, ix_btp);
