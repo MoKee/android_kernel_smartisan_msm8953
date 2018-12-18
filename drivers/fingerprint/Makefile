@@ -5,3 +5,4 @@ ifdef CONFIG_VENDOR_SMARTISAN_OSCAR
 obj-y += goodix_oscar/
 endif
 obj-y += idex/
+obj-y += betterlife/

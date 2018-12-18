@@ -1,0 +1,1 @@
+obj-$(CONFIG_FINGERPRINT_BETTERLIFE) += bf_spi_tee.o
