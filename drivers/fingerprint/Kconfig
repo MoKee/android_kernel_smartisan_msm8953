@@ -1,0 +1,12 @@
+menuconfig FINGERPRINT
+	tristate "Fingerprint Config Choosen"
+	default y
+	help
+	  Say Y to can config finperprint manufacturer
+
+if FINGERPRINT
+
+	source "drivers/fingerprint/goodix_odin/Kconfig"
+	source "drivers/fingerprint/goodix_oscar/Kconfig"
+
+endif

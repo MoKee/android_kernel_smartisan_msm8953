@@ -175,6 +175,7 @@ obj-$(CONFIG_SENSORS_SSC)	+= sensors/
 
 ifdef CONFIG_VENDOR_SMARTISAN
 obj-y += smartisan/
+obj-y += fingerprint/
 endif
 ifdef CONFIG_VENDOR_SMARTISAN_OSCAR
 obj-y += elliptic/
