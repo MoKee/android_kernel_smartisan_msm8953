@@ -1,0 +1,3 @@
+config FINGERPRINT_IX_BTP
+	tristate "IX fingerprint sensor support"
+	depends on SPI_MASTER
