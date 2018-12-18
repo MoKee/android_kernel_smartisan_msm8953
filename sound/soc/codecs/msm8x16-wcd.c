@@ -32,6 +32,9 @@
 #include <linux/timer.h>
 #include <linux/workqueue.h>
 #include <linux/sched.h>
+#ifdef CONFIG_VENDOR_SMARTISAN
+#include <linux/proc_fs.h>
+#endif
 #include <sound/q6afe-v2.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
@@ -135,6 +138,13 @@ static const DECLARE_TLV_DB_SCALE(analog_gain, 0, 25, 1);
 static struct snd_soc_dai_driver msm8x16_wcd_i2s_dai[];
 /* By default enable the internal speaker boost */
 static bool spkr_boost_en = true;
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+extern struct proc_dir_entry *snd_proc_root;
+/* AW87318 works on MODE6 in default */
+#define AW_BOOST_DEFAULT_MODE 3
+static int aw_boost_mode = AW_BOOST_DEFAULT_MODE - 1;
+#endif
 
 #define MSM8X16_WCD_ACQUIRE_LOCK(x) \
 	mutex_lock_nested(&x, SINGLE_DEPTH_NESTING)
@@ -1188,7 +1198,15 @@ static int __msm8x16_wcd_reg_read(struct snd_soc_codec *codec,
 			ret = msm8x16_wcd_ahb_read_device(
 					msm8x16_wcd, reg, 1, &temp);
 			atomic_set(&pdata->mclk_enabled, true);
+#ifdef CONFIG_VENDOR_SMARTISAN
+			/*
+			 * Delay 1s to close mclk to eliminate pop noise when switching
+			 * music
+			 */
+			schedule_delayed_work(&pdata->disable_mclk_work, 1 * HZ);
+#else
 			schedule_delayed_work(&pdata->disable_mclk_work, 50);
+#endif
 err:
 			mutex_unlock(&pdata->cdc_mclk_mutex);
 			mutex_unlock(&msm8x16_wcd->io_lock);
@@ -1246,7 +1264,15 @@ static int __msm8x16_wcd_reg_write(struct snd_soc_codec *codec,
 			ret = msm8x16_wcd_ahb_write_device(
 						msm8x16_wcd, reg, &val, 1);
 			atomic_set(&pdata->mclk_enabled, true);
+#ifdef CONFIG_VENDOR_SMARTISAN
+			/*
+			 * Delay 1s to close mclk to eliminate pop noise when switching
+			 * music
+			 */
+			schedule_delayed_work(&pdata->disable_mclk_work, 1 * HZ);
+#else
 			schedule_delayed_work(&pdata->disable_mclk_work, 50);
+#endif
 err:
 			mutex_unlock(&pdata->cdc_mclk_mutex);
 			mutex_unlock(&msm8x16_wcd->io_lock);
@@ -1730,6 +1756,10 @@ static struct msm8x16_wcd_pdata *msm8x16_wcd_populate_dt_pdata(
 	const char *static_prop_name = "qcom,cdc-static-supplies";
 	const char *ond_prop_name = "qcom,cdc-on-demand-supplies";
 	const char *addr_prop_name = "qcom,dig-cdc-base-addr";
+#ifdef CONFIG_VENDOR_SMARTISAN
+	const char *ext_pa_en_prop_name = "qcom,ext-pa-enable";
+	const char *speaker_id_prop_name = "qcom,speaker-id";
+#endif
 
 	pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
 	if (!pdata)
@@ -1807,6 +1837,30 @@ static struct msm8x16_wcd_pdata *msm8x16_wcd_populate_dt_pdata(
 				__func__, addr_prop_name);
 		pdata->dig_cdc_addr = MSM8X16_DIGITAL_CODEC_BASE_ADDR;
 	}
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+	pdata->ext_pa_en_gpio = of_get_named_gpio(dev->of_node,
+					ext_pa_en_prop_name, 0);
+	if (pdata->ext_pa_en_gpio < 0) {
+		dev_err(dev, "Looking up %s property in node %s failed %d\n",
+			"qcom,ext-pa-enable", dev->of_node->full_name,
+			pdata->ext_pa_en_gpio);
+	}
+
+	pdata->speaker_id_gpio = of_get_named_gpio(dev->of_node,
+					speaker_id_prop_name, 0);
+	if (pdata->speaker_id_gpio < 0) {
+		dev_err(dev, "Looking up %s property in node %s failed %d\n",
+			"qcom,speaker-id", dev->of_node->full_name,
+			pdata->speaker_id_gpio);
+	} else if (gpio_is_valid(pdata->speaker_id_gpio)) {
+		ret = gpio_request_one(pdata->speaker_id_gpio, GPIOF_DIR_IN, "speaker_id");
+		if (ret) {
+			dev_err(dev, "%s: Failed to request gpio %d\n", __func__,
+				pdata->speaker_id_gpio);
+		}
+	}
+#endif
 
 	return pdata;
 err:
@@ -2127,6 +2181,41 @@ static int msm8x16_wcd_hph_mode_set(struct snd_kcontrol *kcontrol,
 		__func__, msm8x16_wcd->hph_mode);
 	return 0;
 }
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+static int aw_boost_mode_get(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+
+	ucontrol->value.integer.value[0] = aw_boost_mode;
+
+	dev_dbg(codec->dev, "%s: aw_boost_mode = %d\n", __func__,
+			aw_boost_mode);
+	return 0;
+}
+
+static int aw_boost_mode_set(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+
+	dev_dbg(codec->dev, "%s: ucontrol->value.integer.value[0] = %ld\n",
+		__func__, ucontrol->value.integer.value[0]);
+
+	switch (ucontrol->value.integer.value[0]) {
+	case 0 ... 9:
+		aw_boost_mode = ucontrol->value.integer.value[0];
+		break;
+	default:
+		aw_boost_mode = AW_BOOST_DEFAULT_MODE - 1;
+		break;
+	}
+	dev_dbg(codec->dev, "%s: aw_boost_mode = %d\n",
+		__func__, aw_boost_mode);
+	return 0;
+}
+#endif
 
 static int msm8x16_wcd_boost_option_get(struct snd_kcontrol *kcontrol,
 				struct snd_ctl_elem_value *ucontrol)
@@ -2561,6 +2650,15 @@ static const struct soc_enum msm8x16_wcd_hph_mode_ctl_enum[] = {
 			msm8x16_wcd_hph_mode_ctrl_text),
 };
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+static const char * const aw_boost_option_ctl_text[] = {
+		"MODE1", "MODE2", "MODE3", "MODE4", "MODE5", "MODE6", "MODE7", "MODE8", "MODE9", "MODE10"};
+static const struct soc_enum aw_boost_option_ctl_enum[] = {
+		SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(aw_boost_option_ctl_text),
+			aw_boost_option_ctl_text),
+};
+#endif
+
 /*cut of frequency for high pass filter*/
 static const char * const cf_text[] = {
 	"MIN_3DB_4Hz", "MIN_3DB_75Hz", "MIN_3DB_150Hz"
@@ -2585,6 +2683,11 @@ static const struct snd_kcontrol_new msm8x16_wcd_snd_controls[] = {
 
 	SOC_ENUM_EXT("RX HPH Mode", msm8x16_wcd_hph_mode_ctl_enum[0],
 		msm8x16_wcd_hph_mode_get, msm8x16_wcd_hph_mode_set),
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+	SOC_ENUM_EXT("AW Boost Mode", aw_boost_option_ctl_enum[0],
+		aw_boost_mode_get, aw_boost_mode_set),
+#endif
 
 	SOC_ENUM_EXT("Boost Option", msm8x16_wcd_boost_option_ctl_enum[0],
 		msm8x16_wcd_boost_option_get, msm8x16_wcd_boost_option_set),
@@ -4241,6 +4344,14 @@ static int msm8x16_wcd_lo_dac_event(struct snd_soc_dapm_widget *w,
 			MSM8X16_WCD_A_ANALOG_RX_LO_DAC_CTL, 0x08, 0x08);
 		snd_soc_update_bits(codec,
 			MSM8X16_WCD_A_ANALOG_RX_LO_DAC_CTL, 0x40, 0x40);
+#ifdef CONFIG_VENDOR_SMARTISAN
+		/*
+		 * We encouter "lineout + analog PA" speaker sound loudness not stable issue on 8953, and the
+		 * analog PA is coming from third party (for example AW8738), its HW delay isn't same as WSA, so
+		 * we may have this issue
+		 */
+		msleep(5); // value is adjustable
+#endif
 		break;
 	case SND_SOC_DAPM_POST_PMU:
 		snd_soc_update_bits(codec,
@@ -4435,7 +4546,9 @@ static const struct snd_soc_dapm_route audio_map[] = {
 	{"HEADPHONE", NULL, "HPHL PA"},
 	{"HEADPHONE", NULL, "HPHR PA"},
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 	{"Ext Spk", NULL, "Ext Spk Switch"},
+#endif
 	{"Ext Spk Switch", "On", "HPHL PA"},
 	{"Ext Spk Switch", "On", "HPHR PA"},
 
@@ -4465,6 +4578,9 @@ static const struct snd_soc_dapm_route audio_map[] = {
 
 	/* lineout to WSA */
 	{"WSA_SPK OUT", NULL, "LINEOUT PA"},
+#ifdef CONFIG_VENDOR_SMARTISAN
+	{"Ext Spk", NULL, "LINEOUT PA"},
+#endif
 
 	{"RX1 CHAIN", NULL, "RX1 CLK"},
 	{"RX2 CHAIN", NULL, "RX2 CLK"},
@@ -4934,6 +5050,41 @@ static int msm8x16_wcd_codec_enable_lo_pa(struct snd_soc_dapm_widget *w,
 	return 0;
 }
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+static int aw_speaker_pa_enable(struct snd_soc_dapm_widget *w,
+		struct snd_kcontrol *kcontrol, int event)
+{
+	struct snd_soc_codec *codec = w->codec;
+	struct msm8x16_wcd_pdata *pdata = codec->dev->platform_data;
+	int mode = AW_BOOST_DEFAULT_MODE;
+	int i = 0;
+
+	dev_dbg(codec->dev, "%s: %d %s\n", __func__, event, w->name);
+
+	if (!gpio_is_valid(pdata->ext_pa_en_gpio)) {
+		dev_err(codec->dev, "%s: gpio %d is invalid.\n", __func__, pdata->ext_pa_en_gpio);
+		return -EINVAL;
+	}
+
+	switch (event) {
+	case SND_SOC_DAPM_POST_PMU:
+		gpio_direction_output(pdata->ext_pa_en_gpio, 1);
+		for (i = 0; i < mode; i++) {
+			udelay(10);
+			gpio_direction_output(pdata->ext_pa_en_gpio, 0);
+			udelay(10);
+			gpio_direction_output(pdata->ext_pa_en_gpio, 1);
+		}
+		break;
+	case SND_SOC_DAPM_PRE_PMD:
+		gpio_direction_output(pdata->ext_pa_en_gpio, 0);
+		msleep(1);
+		break;
+	}
+
+	return 0;
+}
+#else
 static int msm8x16_wcd_codec_enable_spk_ext_pa(struct snd_soc_dapm_widget *w,
 		struct snd_kcontrol *kcontrol, int event)
 {
@@ -4957,6 +5108,7 @@ static int msm8x16_wcd_codec_enable_spk_ext_pa(struct snd_soc_dapm_widget *w,
 	}
 	return 0;
 }
+#endif
 
 static int msm8x16_wcd_codec_enable_ear_pa(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
@@ -5052,7 +5204,9 @@ static const struct snd_soc_dapm_widget msm8x16_wcd_dapm_widgets[] = {
 
 	SND_SOC_DAPM_SUPPLY("INT_LDO_H", SND_SOC_NOPM, 1, 0, NULL, 0),
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 	SND_SOC_DAPM_SPK("Ext Spk", msm8x16_wcd_codec_enable_spk_ext_pa),
+#endif
 
 	SND_SOC_DAPM_OUTPUT("HEADPHONE"),
 	SND_SOC_DAPM_PGA_E("HPHL PA", MSM8X16_WCD_A_ANALOG_RX_HPH_CNP_EN,
@@ -5114,6 +5268,10 @@ static const struct snd_soc_dapm_widget msm8x16_wcd_dapm_widgets[] = {
 			6, 0 , NULL, 0, msm8x16_wcd_codec_enable_lo_pa,
 			SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_PRE_PMD),
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+	SND_SOC_DAPM_SPK("Ext Spk", aw_speaker_pa_enable),
+#endif
+
 	SND_SOC_DAPM_SUPPLY("VDD_SPKDRV", SND_SOC_NOPM, 0, 0,
 			    msm89xx_wcd_codec_enable_vdd_spkr,
 			    SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
@@ -5168,15 +5326,19 @@ static const struct snd_soc_dapm_widget msm8x16_wcd_dapm_widgets[] = {
 		&rx2_mix1_inp1_mux),
 	SND_SOC_DAPM_MUX("RX2 MIX1 INP2", SND_SOC_NOPM, 0, 0,
 		&rx2_mix1_inp2_mux),
+#ifndef CONFIG_VENDOR_SMARTISAN
 	SND_SOC_DAPM_MUX("RX2 MIX1 INP3", SND_SOC_NOPM, 0, 0,
 		&rx2_mix1_inp3_mux),
+#endif
 
 	SND_SOC_DAPM_MUX("RX3 MIX1 INP1", SND_SOC_NOPM, 0, 0,
 		&rx3_mix1_inp1_mux),
 	SND_SOC_DAPM_MUX("RX3 MIX1 INP2", SND_SOC_NOPM, 0, 0,
 		&rx3_mix1_inp2_mux),
+#ifndef CONFIG_VENDOR_SMARTISAN
 	SND_SOC_DAPM_MUX("RX3 MIX1 INP3", SND_SOC_NOPM, 0, 0,
 		&rx3_mix1_inp3_mux),
+#endif
 
 	SND_SOC_DAPM_MUX("RX1 MIX2 INP1", SND_SOC_NOPM, 0, 0,
 		&rx1_mix2_inp1_mux),
@@ -5785,6 +5947,16 @@ static int msm8x16_wcd_codec_probe(struct snd_soc_codec *codec)
 	/* codec resmgr module init */
 	msm8x16_wcd = codec->control_data;
 	pdata = msm8x16_wcd->dev->platform_data;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	if (gpio_is_valid(pdata->ext_pa_en_gpio)) {
+		ret = gpio_request_one(pdata->ext_pa_en_gpio, GPIOF_OUT_INIT_LOW, "ext-pa-enable");
+		if (ret) {
+			dev_err(codec->dev, "%s: Failed to request gpio %d\n", __func__,
+				pdata->ext_pa_en_gpio);
+			return ret;
+		}
+	}
+#endif
 	msm8x16_wcd->dig_base = ioremap(pdata->dig_cdc_addr,
 			MSM8X16_DIGITAL_CODEC_REG_SIZE);
 	if (msm8x16_wcd->dig_base == NULL) {
@@ -5792,9 +5964,13 @@ static int msm8x16_wcd_codec_probe(struct snd_soc_codec *codec)
 		kfree(msm8x16_wcd_priv);
 		return -ENOMEM;
 	}
+#ifdef CONFIG_VENDOR_SMARTISAN
+	msm8x16_wcd_priv->spkdrv_reg = NULL;
+#else
 	msm8x16_wcd_priv->spkdrv_reg =
 		wcd8x16_wcd_codec_find_regulator(codec->control_data,
 						MSM89XX_VDD_SPKDRV_NAME);
+#endif
 	msm8x16_wcd_priv->pmic_rev = snd_soc_read(codec,
 					MSM8X16_WCD_A_DIGITAL_REVISION1);
 	msm8x16_wcd_priv->codec_version = snd_soc_read(codec,
@@ -5922,14 +6098,24 @@ static int msm8x16_wcd_codec_remove(struct snd_soc_codec *codec)
 	struct msm8x16_wcd_priv *msm8x16_wcd_priv =
 					snd_soc_codec_get_drvdata(codec);
 	struct msm8x16_wcd *msm8x16_wcd;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	struct msm8x16_wcd_pdata *pdata;
+#endif
 
 	msm8x16_wcd = codec->control_data;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	pdata = msm8x16_wcd->dev->platform_data;
+#endif
 	msm8x16_wcd_priv->spkdrv_reg = NULL;
 	msm8x16_wcd_priv->on_demand_list[ON_DEMAND_MICBIAS].supply = NULL;
 	atomic_set(&msm8x16_wcd_priv->on_demand_list[ON_DEMAND_MICBIAS].ref, 0);
 	iounmap(msm8x16_wcd->dig_base);
 	kfree(msm8x16_wcd_priv->fw_data);
 	kfree(msm8x16_wcd_priv);
+#ifdef CONFIG_VENDOR_SMARTISAN
+	if (gpio_is_valid(pdata->ext_pa_en_gpio))
+		gpio_free(pdata->ext_pa_en_gpio);
+#endif
 
 	return 0;
 }
@@ -6185,6 +6371,74 @@ static int msm8x16_wcd_device_init(struct msm8x16_wcd *msm8x16)
 	return 0;
 }
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+static int speaker_id_show(struct seq_file *m, void *v)
+{
+	struct msm8x16_wcd_pdata *pdata = m->private;
+	char *str = "none\n";
+
+	if (gpio_is_valid(pdata->speaker_id_gpio)) {
+		if (gpio_get_value_cansleep(pdata->speaker_id_gpio)) {
+			str = "aoyin\n";
+		} else {
+			str = "yucheng\n";
+		}
+	} else {
+		pr_err("%s gpio %d is invalid\n", __func__, pdata->speaker_id_gpio);
+	}
+
+	return seq_printf(m, "%s", str);
+}
+
+static int speaker_id_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, speaker_id_show, PDE_DATA(inode));
+}
+
+static const struct file_operations speaker_id_fops = {
+	.open		= speaker_id_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= seq_release,
+};
+
+static ssize_t enable_ext_pa_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	struct msm8x16_wcd_pdata *pdata = dev->platform_data;
+
+	if (!gpio_is_valid(pdata->ext_pa_en_gpio)) {
+		dev_err(dev, "%s: gpio %d is invalid.\n", __func__, pdata->ext_pa_en_gpio);
+		return -EINVAL;
+	}
+
+	return snprintf(buf, PAGE_SIZE, "%d\n",
+			gpio_get_value(pdata->ext_pa_en_gpio));
+}
+
+static ssize_t enable_ext_pa_store(struct device *dev,
+				struct device_attribute *attr,
+				const char *buff, size_t size)
+{
+	struct msm8x16_wcd_pdata *pdata = dev->platform_data;
+	int buf = 0;
+
+	if (!gpio_is_valid(pdata->ext_pa_en_gpio)) {
+		dev_err(dev, "%s: gpio %d is invalid.\n", __func__, pdata->ext_pa_en_gpio);
+		return -EINVAL;
+	}
+	pr_debug("%s: GPIO is %d\n",__func__,pdata->ext_pa_en_gpio);
+	if ((sscanf(buff, "%d", &buf) == 1) && (buf >= 0)) {
+		pr_debug("%s: GPIO is %d, set to %d\n",__func__,pdata->ext_pa_en_gpio,buf);
+		gpio_direction_output(pdata->ext_pa_en_gpio, !!buf);
+		return size;
+	}
+	return -EINVAL;
+}
+
+static DEVICE_ATTR(enable_ext_pa, S_IRUGO | S_IWUSR, enable_ext_pa_show, enable_ext_pa_store);
+#endif
+
 static int msm8x16_wcd_spmi_probe(struct spmi_device *spmi)
 {
 	int ret = 0;
@@ -6285,12 +6539,39 @@ static int msm8x16_wcd_spmi_probe(struct spmi_device *spmi)
 	}
 	usleep_range(5, 6);
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+	/* Register the procfs files for speaker id identify*/
+	if (snd_proc_root) {
+		if (!proc_create_data("speaker_id", S_IRUGO, snd_proc_root,
+				&speaker_id_fops, pdata)) {
+			ret = -ENOMEM;
+			dev_err(&spmi->dev, "error creating speaker_id proc files\n");
+			goto err_supplies;
+		}
+	} else {
+		ret = -EINVAL;
+		dev_err(&spmi->dev, "snd_proc_root is NULL\n");
+		goto err_supplies;
+	}
+
+	/* Register the sysfs files for external PA enable gpio identify*/
+	ret = device_create_file(&spmi->dev, &dev_attr_enable_ext_pa);
+	if (ret) {
+		dev_err(&spmi->dev, "error creating enable_ext_pa sysfs files\n");
+		goto err_supplies;
+	}
+#endif
+
 	ret = msm8x16_wcd_device_init(msm8x16);
 	if (ret) {
 		dev_err(&spmi->dev,
 			"%s:msm8x16_wcd_device_init failed with error %d\n",
 			__func__, ret);
+#ifdef CONFIG_VENDOR_SMARTISAN
+		goto err_dev_file;
+#else
 		goto err_supplies;
+#endif
 	}
 	dev_set_drvdata(&spmi->dev, msm8x16);
 	spmi_dev_registered_cnt++;
@@ -6306,11 +6587,19 @@ register_codec:
 				dev_err(&spmi->dev,
 				"%s:snd_soc_register_codec failed with error %d\n",
 				__func__, ret);
+#ifdef CONFIG_VENDOR_SMARTISAN
+				goto err_dev_file;
+#else
 				goto err_supplies;
+#endif
 			}
 		}
 	}
 	return ret;
+#ifdef CONFIG_VENDOR_SMARTISAN
+err_dev_file:
+	device_remove_file(&spmi->dev, &dev_attr_enable_ext_pa);
+#endif
 err_supplies:
 	msm8x16_wcd_disable_supplies(msm8x16, pdata);
 err_codec:
@@ -6328,8 +6617,16 @@ static void msm8x16_wcd_device_exit(struct msm8x16_wcd *msm8x16)
 static int msm8x16_wcd_spmi_remove(struct spmi_device *spmi)
 {
 	struct msm8x16_wcd *msm8x16 = dev_get_drvdata(&spmi->dev);
+#ifdef CONFIG_VENDOR_SMARTISAN
+	struct msm8x16_wcd_pdata *pdata = spmi->dev.platform_data;
+#endif
 
 	msm8x16_wcd_device_exit(msm8x16);
+#ifdef CONFIG_VENDOR_SMARTISAN
+	if (gpio_is_valid(pdata->speaker_id_gpio))
+		gpio_free(pdata->speaker_id_gpio);
+	device_remove_file(&spmi->dev, &dev_attr_enable_ext_pa);
+#endif
 	return 0;
 }
 

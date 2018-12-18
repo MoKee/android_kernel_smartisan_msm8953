@@ -40,10 +40,18 @@
 				  SND_JACK_BTN_4 | SND_JACK_BTN_5 | \
 				  SND_JACK_BTN_6 | SND_JACK_BTN_7)
 #define OCP_ATTEMPT 1
+#ifdef CONFIG_VENDOR_SMARTISAN
+#define HS_DETECT_PLUG_TIME_MS (2 * 1000)
+#else
 #define HS_DETECT_PLUG_TIME_MS (3 * 1000)
+#endif
 #define SPECIAL_HS_DETECT_TIME_MS (2 * 1000)
 #define MBHC_BUTTON_PRESS_THRESHOLD_MIN 250
+#ifdef CONFIG_VENDOR_SMARTISAN
+#define GND_MIC_SWAP_THRESHOLD 3
+#else
 #define GND_MIC_SWAP_THRESHOLD 4
+#endif
 #define WCD_FAKE_REMOVAL_MIN_PERIOD_MS 100
 #define HS_VREF_MIN_VAL 1400
 #define FW_READ_ATTEMPTS 15
@@ -401,6 +409,26 @@ out_micb_en:
 	return 0;
 }
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+static void wcd_cancel_fixup_hs_work(struct wcd_mbhc *mbhc)
+{
+	int r;
+
+	WCD_MBHC_RSC_UNLOCK(mbhc);
+	r = cancel_delayed_work_sync(&mbhc->mbhc_fixup_dwork);
+	/*
+	 * if scheduled mbhc.mbhc_fixup_dwork is canceled from here,
+	 * we have to unlock from here instead fixup_work
+	 */
+	if (r) {
+		pr_debug("%s: fixup_work is canceled\n",
+			 __func__);
+		mbhc->mbhc_cb->lock_sleep(mbhc, false);
+	}
+	WCD_MBHC_RSC_LOCK(mbhc);
+}
+#endif
+
 static int wcd_cancel_btn_work(struct wcd_mbhc *mbhc)
 {
 	int r;
@@ -712,6 +740,12 @@ static void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 
 		pr_debug("%s: Reporting insertion %d(%x)\n", __func__,
 			 jack_type, mbhc->hph_status);
+#ifdef CONFIG_VENDOR_SMARTISAN
+		if ((mbhc->hph_status & SND_JACK_HEADSET) == SND_JACK_HEADSET)
+			mbhc->micbias_enable = true;
+		else
+			mbhc->micbias_enable = false;
+#endif
 		wcd_mbhc_jack_report(mbhc, &mbhc->headset_jack,
 				    (mbhc->hph_status | SND_JACK_MECHANICAL),
 				    WCD_MBHC_JACK_MASK);
@@ -1164,6 +1198,15 @@ static void wcd_correct_swch_plug(struct work_struct *work)
 	int rc, spl_hs_count = 0;
 	int cross_conn;
 	int try = 0;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	/*
+	 * The following variables are used to optimize headset detection
+	 */
+	int swap_gnd_mic_flag = 0;
+	int skip_ck_cross_conn_flag = 0;
+	int should_optimize = 1;
+	int first_time = 1;
+#endif
 
 	pr_debug("%s: enter\n", __func__);
 
@@ -1220,6 +1263,9 @@ static void wcd_correct_swch_plug(struct work_struct *work)
 		pr_debug("%s: cross con found, start polling\n",
 			 __func__);
 		plug_type = MBHC_PLUG_TYPE_GND_MIC_SWAP;
+#ifdef CONFIG_VENDOR_SMARTISAN
+		swap_gnd_mic_flag = 1;
+#endif
 		pr_debug("%s: Plug found, plug type is %d\n",
 			 __func__, plug_type);
 		goto correct_plug_type;
@@ -1303,12 +1349,41 @@ correct_plug_type:
 
 		if ((!hs_comp_res) && (!is_pa_on)) {
 			/* Check for cross connection*/
+#ifdef CONFIG_VENDOR_SMARTISAN
+			ret = skip_ck_cross_conn_flag ? 0 : wcd_check_cross_conn(mbhc);
+#else
 			ret = wcd_check_cross_conn(mbhc);
+#endif
 			if (ret < 0) {
+#ifdef CONFIG_VENDOR_SMARTISAN
+				if (first_time) {
+					first_time = 0;
+					should_optimize = 0;
+					pr_debug("%s: ret: %d, so will not optimize\n", __func__, ret);
+				}
+#endif
 				continue;
 			} else if (ret > 0) {
 				pt_gnd_mic_swap_cnt++;
 				no_gnd_mic_swap_cnt = 0;
+#ifdef CONFIG_VENDOR_SMARTISAN
+				if (first_time) {
+					first_time = 0;
+					if (!swap_gnd_mic_flag) {
+						should_optimize = 0;
+						pr_debug("%s: ret: %d, swap_gnd_mic_flag: %d, so will not optimize\n",
+							__func__, ret, swap_gnd_mic_flag);
+					} else
+						pr_debug("%s: ret: %d, swap_gnd_mic_flag: %d, so will optimize\n",
+							__func__, ret, swap_gnd_mic_flag);
+				}
+				if (should_optimize) {
+					if (swap_gnd_mic_flag) {
+						pt_gnd_mic_swap_cnt = GND_MIC_SWAP_THRESHOLD;
+						skip_ck_cross_conn_flag = 1;
+					}
+				}
+#endif
 				if (pt_gnd_mic_swap_cnt <
 						GND_MIC_SWAP_THRESHOLD) {
 					continue;
@@ -1329,6 +1404,24 @@ correct_plug_type:
 				no_gnd_mic_swap_cnt++;
 				pt_gnd_mic_swap_cnt = 0;
 				plug_type = MBHC_PLUG_TYPE_HEADSET;
+#ifdef CONFIG_VENDOR_SMARTISAN
+				if (first_time) {
+					first_time = 0;
+					if (swap_gnd_mic_flag) {
+						should_optimize = 0;
+						pr_debug("%s: ret: %d, swap_gnd_mic_flag: %d, so will not optimize\n",
+							__func__, ret, swap_gnd_mic_flag);
+					} else
+						pr_debug("%s: ret: %d, swap_gnd_mic_flag: %d, so will optimize\n",
+							__func__, ret, swap_gnd_mic_flag);
+				}
+				if (should_optimize) {
+					if (!swap_gnd_mic_flag) {
+						no_gnd_mic_swap_cnt = GND_MIC_SWAP_THRESHOLD;
+						skip_ck_cross_conn_flag = 1;
+					}
+				}
+#endif
 				if ((no_gnd_mic_swap_cnt <
 				    GND_MIC_SWAP_THRESHOLD) &&
 				    (spl_hs_count != WCD_MBHC_SPL_HS_CNT)) {
@@ -1458,7 +1551,17 @@ exit:
 	if (mbhc->mbhc_cb->hph_pull_down_ctrl)
 		mbhc->mbhc_cb->hph_pull_down_ctrl(codec, true);
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+	if (mbhc->current_plug == MBHC_PLUG_TYPE_HEADPHONE) {
+		pr_debug("%s: schedule fixup headset work.\n", __func__);
+		schedule_delayed_work(&mbhc->mbhc_fixup_dwork,
+					msecs_to_jiffies(6 * 1000));
+	} else {
+		mbhc->mbhc_cb->lock_sleep(mbhc, false);
+	}
+#else
 	mbhc->mbhc_cb->lock_sleep(mbhc, false);
+#endif
 	pr_debug("%s: leave\n", __func__);
 }
 
@@ -1515,6 +1618,9 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 	pr_debug("%s: mbhc->current_plug: %d detection_type: %d\n", __func__,
 			mbhc->current_plug, detection_type);
 	wcd_cancel_hs_detect_plug(mbhc, &mbhc->correct_plug_swch);
+#ifdef CONFIG_VENDOR_SMARTISAN
+	wcd_cancel_fixup_hs_work(mbhc);
+#endif
 
 	if (mbhc->mbhc_cb->micbias_enable_status)
 		micbias1 = mbhc->mbhc_cb->micbias_enable_status(mbhc,
@@ -1547,6 +1653,9 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 			mbhc->mbhc_cb->enable_mb_source(codec, true);
 		mbhc->btn_press_intr = false;
 		mbhc->is_btn_press = false;
+#ifdef CONFIG_VENDOR_SMARTISAN
+		atomic_set(&mbhc->not_fixup, 0);
+#endif
 		wcd_mbhc_detect_plug_type(mbhc);
 	} else if ((mbhc->current_plug != MBHC_PLUG_TYPE_NONE)
 			&& !detection_type) {
@@ -1902,6 +2011,27 @@ static void wcd_btn_lpress_fn(struct work_struct *work)
 	mbhc->mbhc_cb->lock_sleep(mbhc, false);
 }
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+static void wcd_fixup_headset_fn(struct work_struct *work)
+{
+	struct delayed_work *dwork;
+	struct wcd_mbhc *mbhc;
+
+	pr_debug("%s: Enter\n", __func__);
+
+	dwork = to_delayed_work(work);
+	mbhc = container_of(dwork, struct wcd_mbhc, mbhc_fixup_dwork);
+
+	if (mbhc->current_plug == MBHC_PLUG_TYPE_HEADPHONE) {
+		pr_debug("%s: current is headphone, so cancel fix up headphone\n", __func__);
+		atomic_set(&mbhc->not_fixup, 1);
+	}
+
+	pr_debug("%s: leave\n", __func__);
+	mbhc->mbhc_cb->lock_sleep(mbhc, false);
+}
+#endif
+
 static bool wcd_mbhc_fw_validate(const void *data, size_t size)
 {
 	u32 cfg_offset;
@@ -2001,12 +2131,25 @@ static irqreturn_t wcd_mbhc_release_handler(int irq, void *data)
 	 * get btn release interrupt, so connected cable should be
 	 * headset not headphone.
 	 */
+#ifdef CONFIG_VENDOR_SMARTISAN
+	if (mbhc->current_plug == MBHC_PLUG_TYPE_HEADPHONE && !atomic_read(&mbhc->not_fixup)) {
+#else
 	if (mbhc->current_plug == MBHC_PLUG_TYPE_HEADPHONE) {
+#endif
 		wcd_mbhc_find_plug_and_report(mbhc, MBHC_PLUG_TYPE_HEADSET);
+#ifdef CONFIG_VENDOR_SMARTISAN
+		/* workaround: headset slow insertion */
+		if (mbhc->micbias_enable)
+			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
+#endif
 		goto exit;
 
 	}
+#ifdef CONFIG_VENDOR_SMARTISAN
+	if (mbhc->buttons_pressed & WCD_MBHC_JACK_BUTTON_MASK && mbhc->current_plug != MBHC_PLUG_TYPE_HEADPHONE) {
+#else
 	if (mbhc->buttons_pressed & WCD_MBHC_JACK_BUTTON_MASK) {
+#endif
 		ret = wcd_cancel_btn_work(mbhc);
 		if (ret == 0) {
 			pr_debug("%s: Reporting long button release event\n",
@@ -2130,10 +2273,17 @@ static int wcd_mbhc_initialise(struct wcd_mbhc *mbhc)
 	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_HS_L_DET_PULL_UP_COMP_CTRL, 1);
 	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_L_DET_EN, 1);
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+	/* Insertion debounce set to 128ms */
+	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_INSREM_DBNC, 7);
+	/* Button Debounce set to 32ms */
+	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_BTN_DBNC, 3);
+#else
 	/* Insertion debounce set to 96ms */
 	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_INSREM_DBNC, 6);
 	/* Button Debounce set to 16ms */
 	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_BTN_DBNC, 2);
+#endif
 
 	/* Enable micbias ramp */
 	if (mbhc->mbhc_cb->mbhc_micb_ramp_control)
@@ -2462,6 +2612,11 @@ int wcd_mbhc_init(struct wcd_mbhc *mbhc, struct snd_soc_codec *codec,
 	}
 	mutex_init(&mbhc->hphl_pa_lock);
 	mutex_init(&mbhc->hphr_pa_lock);
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+	atomic_set(&mbhc->not_fixup, 0);
+	INIT_DELAYED_WORK(&mbhc->mbhc_fixup_dwork, wcd_fixup_headset_fn);
+#endif
 
 	/* Register event notifier */
 	mbhc->nblock.notifier_call = wcd_event_notify;

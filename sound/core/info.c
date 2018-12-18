@@ -145,7 +145,11 @@ EXPORT_SYMBOL(snd_iprintf);
 
  */
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+struct proc_dir_entry *snd_proc_root;
+#else
 static struct proc_dir_entry *snd_proc_root;
+#endif
 struct snd_info_entry *snd_seq_root;
 EXPORT_SYMBOL(snd_seq_root);
 
