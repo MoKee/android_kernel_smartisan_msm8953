@@ -29,6 +29,8 @@
 #include <linux/wakelock.h>
 #include <linux/workqueue.h>
 #include <linux/usb/class-dual-role.h>
+#include <linux/semaphore.h>
+#define FUSB301_SUSPEND_LOCK
 #undef  __CONST_FFS
 #define __CONST_FFS(_x) \
         ((_x) & 0x0F ? ((_x) & 0x03 ? ((_x) & 0x01 ? 0 : 1) :\
@@ -173,7 +175,7 @@ struct fusb301_chip {
 	u8 dttime;
 	bool triedsnk;
 	int try_attcnt;
-	struct work_struct dwork;
+	struct delayed_work dwork;
 	struct delayed_work twork;
 	struct wake_lock wlock;
 	struct mutex mlock;
@@ -181,6 +183,9 @@ struct fusb301_chip {
 	struct dual_role_phy_instance *dual_role;
 	bool role_switch;
 	struct dual_role_phy_desc *desc;
+#ifdef FUSB301_SUSPEND_LOCK
+	struct semaphore suspend_lock;
+#endif
 };
 #define fusb_update_state(chip, st) \
 	if(chip && st < FUSB_STATE_TRY_SRC) { \
@@ -1377,10 +1382,13 @@ static void fusb301_timer_work_handler(struct work_struct *work)
 static void fusb301_work_handler(struct work_struct *work)
 {
 	struct fusb301_chip *chip =
-			container_of(work, struct fusb301_chip, dwork);
+			container_of(work, struct fusb301_chip, dwork.work);
 	struct device *cdev = &chip->client->dev;
 	int rc;
 	u8 int_sts;
+#ifdef FUSB301_SUSPEND_LOCK
+	down(&chip->suspend_lock);    //Make sure we have resumed from sleep and prevent  suspending.
+#endif
 	mutex_lock(&chip->mlock);
 	/* get interrupt */
 	rc = i2c_smbus_read_byte_data(chip->client, FUSB301_REG_INT);
@@ -1405,10 +1413,15 @@ static void fusb301_work_handler(struct work_struct *work)
 	}
 work_unlock:
 	mutex_unlock(&chip->mlock);
+#ifdef FUSB301_SUSPEND_LOCK
+	up(&chip->suspend_lock);
+#endif
 }
 static irqreturn_t fusb301_interrupt(int irq, void *data)
 {
 	struct fusb301_chip *chip = (struct fusb301_chip *)data;
+	bool rc;
+
 	if (!chip) {
 		pr_err("%s : called before init.\n", __func__);
 		return IRQ_HANDLED;
@@ -1419,7 +1432,8 @@ static irqreturn_t fusb301_interrupt(int irq, void *data)
 	 */
 	wake_lock_timeout(&chip->wlock,
 				msecs_to_jiffies(FUSB301_WAKE_LOCK_TIMEOUT));
-	if (!queue_work(chip->cc_wq, &chip->dwork))
+	rc = queue_delayed_work(chip->cc_wq, &chip->dwork, msecs_to_jiffies(20));
+	if (!rc)
 		dev_err(&chip->client->dev, "%s: can't alloc work\n", __func__);
 	return IRQ_HANDLED;
 }
@@ -1815,7 +1829,10 @@ static int fusb301_probe(struct i2c_client *client,
 		dev_err(cdev, "unable to create workqueue fuxb301-wq\n");
 		goto err2;
 	}
-	INIT_WORK(&chip->dwork, fusb301_work_handler);
+#ifdef FUSB301_SUSPEND_LOCK
+	sema_init(&chip->suspend_lock, 1);
+#endif
+	INIT_DELAYED_WORK(&chip->dwork, fusb301_work_handler);
 	INIT_DELAYED_WORK(&chip->twork, fusb301_timer_work_handler);
 	wake_lock_init(&chip->wlock, WAKE_LOCK_SUSPEND, "fusb301_wake");
 	mutex_init(&chip->mlock);
@@ -1920,10 +1937,30 @@ static void fusb301_shutdown(struct i2c_client *client)
 #ifdef CONFIG_PM
 static int fusb301_suspend(struct device *dev)
 {
+#ifdef FUSB301_SUSPEND_LOCK
+	struct fusb301_chip* chip;
+	struct i2c_client* client = to_i2c_client(dev);
+	pr_info("hzn: %s\n", __func__);
+	if (client) {
+		chip = i2c_get_clientdata(client);
+		if (chip)
+			down(&chip->suspend_lock);
+	}
+#endif
 	return 0;
 }
 static int fusb301_resume(struct device *dev)
 {
+#ifdef FUSB301_SUSPEND_LOCK
+	struct fusb301_chip *chip;
+	struct i2c_client *client = to_i2c_client(dev);
+	pr_info("hzn: %s\n", __func__);
+	if (client) {
+		chip = i2c_get_clientdata(client);
+		if (chip)
+			up(&chip->suspend_lock);
+	}
+#endif
 	return 0;
 }
 static const struct dev_pm_ops fusb301_dev_pm_ops = {
