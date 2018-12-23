@@ -555,6 +555,9 @@ static long bf_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		break;
 
 	case BF_IOCTL_INPUT_KEY_DOWN:
+		if (g_bf_dev->key_disabled) {
+			break;
+		}
 #ifdef FAST_VERSION
 		if (g_bl229x_enbacklight && g_bf_dev->need_report == 0) {
 #else
@@ -682,6 +685,40 @@ static struct miscdevice bf_misc_device = {
 	.fops = &bf_fops,
 };
 
+static ssize_t bf_key_disabled_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct bf_device *bf_dev = dev_get_drvdata(dev);
+	return snprintf(buf, PAGE_SIZE, "%d\n", bf_dev->key_disabled);
+}
+
+static ssize_t bf_key_disabled_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	int data;
+	struct bf_device *bf_dev = dev_get_drvdata(dev);
+
+	if (sscanf(buf, "%d", &data) != 1) {
+		return -EINVAL;
+	}
+
+	bf_dev->key_disabled = !!data;
+
+	return count;
+}
+
+static DEVICE_ATTR(key_disabled, (S_IRUGO | S_IWUSR),
+		bf_key_disabled_show, bf_key_disabled_store);
+
+static struct attribute *attributes[] = {
+	&dev_attr_key_disabled.attr,
+	NULL
+};
+
+static const struct attribute_group attribute_group = {
+	.attrs = attributes,
+};
+
 static int bf_rm_device(struct bf_device *bf_dev)
 {
 	BF_LOG(" bf_rm_device\n");
@@ -750,6 +787,14 @@ static int bf_probe(struct platform_device *pdev)
 	status = misc_register(&bf_misc_device);
 	if(status) {
 		BF_LOG("bl229x_misc_device register failed\n");
+		goto err;
+	}
+
+	dev_set_drvdata(&pdev->dev, bf_dev);
+
+	status = sysfs_create_group(&pdev->dev.kobj, &attribute_group);
+	if (status) {
+		BF_LOG("could not create sysfs\n");
 		goto err;
 	}
 
