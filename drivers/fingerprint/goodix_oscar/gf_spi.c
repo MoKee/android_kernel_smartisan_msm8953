@@ -252,6 +252,10 @@ static void nav_event_input(struct gf_dev *gf_dev, gf_nav_event_t nav_event)
 {
 	uint32_t nav_input = 0;
 
+	if (gf_dev->key_disabled) {
+		return;
+	}
+
 	switch (nav_event) {
 	case GF_NAV_FINGER_DOWN:
 		pr_debug("%s nav finger down\n", __func__);
@@ -362,6 +366,10 @@ static void irq_cleanup(struct gf_dev *gf_dev)
 static void gf_kernel_key_input(struct gf_dev *gf_dev, struct gf_key *gf_key)
 {
 	uint32_t key_input = 0;
+
+	if (gf_dev->key_disabled) {
+		return;
+	}
 
 	if (gf_key->key == GF_KEY_HOME) {
 		key_input = GF_KEY_INPUT_HOME;
@@ -688,6 +696,40 @@ static struct notifier_block goodix_noti_block = {
 	.notifier_call = goodix_fb_state_chg_callback,
 };
 
+static ssize_t gf_key_disabled_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct gf_dev *gf_dev = dev_get_drvdata(dev);
+	return snprintf(buf, PAGE_SIZE, "%d\n", gf_dev->key_disabled);
+}
+
+static ssize_t gf_key_disabled_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	int data;
+	struct gf_dev *gf_dev = dev_get_drvdata(dev);
+
+	if (sscanf(buf, "%d", &data) != 1) {
+		return -EINVAL;
+	}
+
+	gf_dev->key_disabled = !!data;
+
+	return count;
+}
+
+static DEVICE_ATTR(key_disabled, (S_IRUGO | S_IWUSR),
+		gf_key_disabled_show, gf_key_disabled_store);
+
+static struct attribute *attributes[] = {
+	&dev_attr_key_disabled.attr,
+	NULL
+};
+
+static const struct attribute_group attribute_group = {
+	.attrs = attributes,
+};
+
 static struct class *gf_class;
 #if defined(USE_SPI_BUS)
 static int gf_probe(struct spi_device *spi)
@@ -774,10 +816,19 @@ static int gf_probe(struct platform_device *pdev)
 
 	wake_lock_init(&fp_wakelock, WAKE_LOCK_SUSPEND, "fp_wakelock");
 
+	dev_set_drvdata(&pdev->dev, gf_dev);
+
+	status = sysfs_create_group(&pdev->dev.kobj, &attribute_group);
+	if (status) {
+		pr_err("could not create sysfs\n");
+		goto error_sysfs;
+	}
+
 	pr_info("version V%d.%d.%02d\n", VER_MAJOR, VER_MINOR, PATCH_LEVEL);
 
 	return status;
 
+error_sysfs:
 #ifdef AP_CONTROL_CLK
 gfspi_probe_clk_enable_failed:
 	gfspi_ioctl_clk_uninit(gf_dev);
