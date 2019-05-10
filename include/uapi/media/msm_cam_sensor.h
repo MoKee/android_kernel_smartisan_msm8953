@@ -286,6 +286,9 @@ struct msm_eeprom_info_t {
 	struct msm_sensor_power_setting_array *power_setting_array;
 	enum i2c_freq_mode_t i2c_freq_mode;
 	struct msm_eeprom_memory_map_array *mem_map_array;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	struct msm_eeprom_write_map_array  *write_map_array;  //JiGaoping add for write data to eeprom 2016-12-02
+#endif
 };
 
 struct msm_ir_led_cfg_data_t {
@@ -302,7 +305,11 @@ struct msm_eeprom_cfg_data {
 	enum eeprom_cfg_type_t cfgtype;
 	uint8_t is_supported;
 	union {
+#ifdef CONFIG_VENDOR_SMARTISAN
+		char eeprom_name[MAX_EEPROM_NAME];
+#else
 		char eeprom_name[MAX_SENSOR_NAME];
+#endif
 		struct eeprom_get_t get_data;
 		struct eeprom_read_t read_data;
 		struct eeprom_write_t write_data;
