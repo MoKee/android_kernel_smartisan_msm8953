@@ -325,10 +325,16 @@ struct msm_vfe_axi_stream_request_cmd {
 	uint32_t axi_stream_handle;
 	uint32_t controllable_output;
 	uint32_t burst_len;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	/* Flag indicating memory input stream */
+	enum msm_stream_memory_input_t memory_input;
+#else
 	/* Flag indicating memory input stream */
 	enum msm_stream_rdi_input_type rdi_input_type;
+#endif
 };
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 struct msm_vfe32_axi_stream_request_cmd {
 	uint32_t session_id;
 	uint32_t stream_id;
@@ -351,6 +357,7 @@ struct msm_vfe32_axi_stream_request_cmd {
 	/* Flag indicating memory input stream */
 	enum msm_stream_memory_input_t memory_input;
 };
+#endif
 
 struct msm_vfe_axi_stream_release_cmd {
 	uint32_t stream_handle;
@@ -712,8 +719,10 @@ enum msm_isp_event_idx {
 	ISP_REG_UPDATE_MISSING = 13,
 	ISP_BUF_FATAL_ERROR = 14,
 	ISP_EVENT_MAX         = 15,
+#ifndef CONFIG_VENDOR_SMARTISAN
 	ISP_WM_BUS_OVERFLOW = 16,
 	ISP_CAMIF_ERROR     = 17
+#endif
 };
 
 #define ISP_EVENT_OFFSET          8
@@ -768,7 +777,9 @@ struct msm_isp_fetch_eng_event {
 struct msm_isp_stats_event {
 	uint32_t stats_mask;                        /* 4 bytes */
 	uint8_t stats_buf_idxs[MSM_ISP_STATS_MAX];  /* 11 bytes */
+#ifndef CONFIG_VENDOR_SMARTISAN
 	uint8_t pd_stats_idx;
+#endif
 };
 
 struct msm_isp_stream_ack {
@@ -960,9 +971,11 @@ enum msm_isp_ioctl_cmd_code {
 	MSM_ISP_MAP_BUF_START_MULTI_PASS_FE,
 	MSM_ISP_CFG_HW_STATE,
 	MSM_ISP_AHB_CLK_CFG,
+#ifndef CONFIG_VENDOR_SMARTISAN
 	MSM_ISP_UPDATE_FE_FRAME_ID,
 	MSM_ISP_RESTART_FE,
 	MSM_ISP32_REQUEST_STREAM,
+#endif
 };
 
 #define VIDIOC_MSM_VFE_REG_CFG \

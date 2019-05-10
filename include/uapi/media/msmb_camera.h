@@ -217,7 +217,11 @@ struct msm_camera_private_ioctl_arg {
 	__u32 size;
 	__u32 result;
 	__u32 reserved;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	__user __u64 ioctl_ptr;
+#else
 	__u64 ioctl_ptr;
+#endif
 };
 
 #define VIDIOC_MSM_CAMERA_PRIVATE_IOCTL_CMD \
