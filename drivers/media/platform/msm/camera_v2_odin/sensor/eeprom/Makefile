@@ -1,0 +1,5 @@
+ccflags-y += -Idrivers/media/platform/msm/camera_v2_odin
+ccflags-y += -Idrivers/media/platform/msm/camera_v2_odin/common
+ccflags-y += -Idrivers/media/platform/msm/camera_v2_odin/sensor/io
+ccflags-y += -Idrivers/media/platform/msm/camera_v2_odin/sensor/cci
+obj-$(CONFIG_MSM_EEPROM) += msm_eeprom.o
