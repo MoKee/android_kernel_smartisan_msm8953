@@ -334,7 +334,6 @@ struct msm_vfe_axi_stream_request_cmd {
 #endif
 };
 
-#ifndef CONFIG_VENDOR_SMARTISAN
 struct msm_vfe32_axi_stream_request_cmd {
 	uint32_t session_id;
 	uint32_t stream_id;
@@ -357,7 +356,6 @@ struct msm_vfe32_axi_stream_request_cmd {
 	/* Flag indicating memory input stream */
 	enum msm_stream_memory_input_t memory_input;
 };
-#endif
 
 struct msm_vfe_axi_stream_release_cmd {
 	uint32_t stream_handle;
@@ -752,8 +750,10 @@ enum msm_isp_event_idx {
 #define ISP_EVENT_REG_UPDATE_MISSING (ISP_EVENT_BASE + ISP_REG_UPDATE_MISSING)
 #define ISP_EVENT_BUF_FATAL_ERROR (ISP_EVENT_BASE + ISP_BUF_FATAL_ERROR)
 #define ISP_EVENT_STREAM_UPDATE_DONE   (ISP_STREAM_EVENT_BASE)
+#ifndef CONFIG_VENDOR_SMARTISAN
 #define ISP_EVENT_CAMIF_ERROR     (ISP_EVENT_BASE + ISP_CAMIF_ERROR)
 #define ISP_EVENT_WM_BUS_OVERFLOW (ISP_EVENT_BASE + ISP_WM_BUS_OVERFLOW)
+#endif
 
 /* The msm_v4l2_event_data structure should match the
  * v4l2_event.u.data field.
@@ -998,9 +998,11 @@ enum msm_isp_ioctl_cmd_code {
 	_IOWR('V', MSM_ISP_REQUEST_STREAM, \
 		struct msm_vfe_axi_stream_request_cmd)
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 #define VIDIOC_MSM_ISP32_REQUEST_STREAM \
 	_IOWR('V', MSM_ISP32_REQUEST_STREAM, \
 		struct msm_vfe32_axi_stream_request_cmd)
+#endif
 
 #define VIDIOC_MSM_ISP_CFG_STREAM \
 	_IOWR('V', MSM_ISP_CFG_STREAM, \
@@ -1062,9 +1064,11 @@ enum msm_isp_ioctl_cmd_code {
 	_IOWR('V', MSM_ISP_AXI_RESTART, \
 		struct msm_vfe_axi_restart_cmd)
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 #define VIDIOC_MSM_ISP_RESTART_FE \
 	_IOWR('V', MSM_ISP_RESTART_FE,\
 		struct msm_vfe_restart_fe_cmd)
+#endif
 
 #define VIDIOC_MSM_ISP_FETCH_ENG_START \
 	_IOWR('V', MSM_ISP_FETCH_ENG_START, \
@@ -1082,9 +1086,11 @@ enum msm_isp_ioctl_cmd_code {
 	_IOWR('V', MSM_ISP_MAP_BUF_START_FE, \
 		struct msm_vfe_fetch_eng_start)
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 #define VIDIOC_MSM_ISP_UPDATE_FE_FRAME_ID \
 	_IOWR('V', MSM_ISP_UPDATE_FE_FRAME_ID, \
 		struct msm_vfe_update_fe_frame_id)
+#endif
 
 #define VIDIOC_MSM_ISP_UNMAP_BUF \
 	_IOWR('V', MSM_ISP_UNMAP_BUF, \
