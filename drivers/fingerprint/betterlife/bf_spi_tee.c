@@ -126,6 +126,9 @@ static int bf_free_named_gpio(struct bf_device *bf_dev, u32 gpio);
 static struct notifier_block fb_notif;
 #endif
 
+extern int gf_get_back_key_code(void);
+extern int gf_get_home_key_code(void);
+
 #if defined(CONFIG_FB)
 static int fb_notifier_callback(struct notifier_block *self,
 				unsigned long event, void *data)
@@ -562,6 +565,14 @@ static long bf_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 #endif
 			bf_key_need_report = 1;
 			key_event = (unsigned int) arg;
+			if (key_event == KEY_BACK) {
+				key_event = gf_get_back_key_code();
+			} else if (key_event == KEY_HOMEPAGE) {
+				key_event = gf_get_home_key_code();
+			}
+			if (key_event == 0) {
+				break;
+			}
 			BF_LOG("key down:%d\n", key_event);
 			input_report_key(bf_inputdev, key_event, 1);
 			input_sync(bf_inputdev);

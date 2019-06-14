@@ -54,6 +54,8 @@
 #include <linux/platform_device.h>
 #endif
 
+#include <linux/input/keypad.h>
+
 #define GF_SPIDEV_NAME     "goodix,fingerprint"
 /*device name after register in charater*/
 #define GF_DEV_NAME            "goodix_fp"
@@ -205,6 +207,36 @@ found:
 	return rc;
 }
 #endif
+
+static int gf_keypad_read(u32 *code, void *data)
+{
+	struct gf_dev *gf_dev = (struct gf_dev *) data;
+
+	if (!gf_dev) {
+		return -ENODEV;
+	}
+
+	*code = gf_dev->key_code;
+
+	return 0;
+}
+
+static int gf_keypad_write(u32 code, void *data)
+{
+	struct gf_dev *gf_dev = (struct gf_dev *) data;
+
+	if (!gf_dev) {
+		return -ENODEV;
+	}
+
+	if (code >= 0) {
+		input_set_capability(gf_dev->input, EV_KEY, code);
+	}
+
+	gf_dev->key_code = code;
+
+	return 0;
+}
 
 static void gf_enable_irq(struct gf_dev *gf_dev)
 {
@@ -436,6 +468,14 @@ static long gf_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		    (&gf_key, (struct gf_key *)arg, sizeof(struct gf_key))) {
 			pr_warn("Failed to copy data from user space.\n");
 			retval = -EFAULT;
+			break;
+		}
+
+		if (gf_key.key == KEY_BACK) {
+			if (gf_dev->key_code != 0) {
+				input_report_key(gf_dev->input, gf_dev->key_code, gf_key.value);
+				input_sync(gf_dev->input);
+			}
 			break;
 		}
 
@@ -769,6 +809,13 @@ static int gf_probe(struct platform_device *pdev)
 				"Faile to allocate input device.\n");
 			status = -ENOMEM;
 		}
+
+		gf_dev->key_code = KEY_BACK;
+
+		keypad_register("home_touch", gf_dev,
+			gf_keypad_read,
+			gf_keypad_write);
+
 #ifdef AP_CONTROL_CLK
 		pr_info("Get the clk resource.\n");
 		/* Enable spi clock */

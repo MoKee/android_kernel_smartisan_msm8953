@@ -50,6 +50,8 @@
 #include <linux/platform_device.h>
 #endif
 
+#include <linux/input/keypad.h>
+
 #define VER_MAJOR   1
 #define VER_MINOR   2
 #define PATCH_LEVEL 10
@@ -91,6 +93,76 @@ static struct gf_key_map maps[] = {
 	{ EV_KEY, GF_NAV_INPUT_HEAVY },
 #endif
 };
+
+extern int gf_get_back_key_code(void) {
+	struct gf_dev *gf_dev = &gf;
+	return gf_dev->back_key_code;
+}
+
+extern int gf_get_home_key_code(void) {
+	struct gf_dev *gf_dev = &gf;
+	return gf_dev->home_key_code;
+}
+
+static int gf_keypad_back_read(u32 *code, void *data)
+{
+	struct gf_dev *gf_dev = (struct gf_dev *) data;
+
+	if (!gf_dev) {
+		return -ENODEV;
+	}
+
+	*code = gf_dev->back_key_code;
+
+	return 0;
+}
+
+static int gf_keypad_back_write(u32 code, void *data)
+{
+	struct gf_dev *gf_dev = (struct gf_dev *) data;
+
+	if (!gf_dev) {
+		return -ENODEV;
+	}
+
+	if (code >= 0) {
+		input_set_capability(gf_dev->input, EV_KEY, code);
+	}
+
+	gf_dev->back_key_code = code;
+
+	return 0;
+}
+
+static int gf_keypad_home_read(u32 *code, void *data)
+{
+	struct gf_dev *gf_dev = (struct gf_dev *) data;
+
+	if (!gf_dev) {
+		return -ENODEV;
+	}
+
+	*code = gf_dev->home_key_code;
+
+	return 0;
+}
+
+static int gf_keypad_home_write(u32 code, void *data)
+{
+	struct gf_dev *gf_dev = (struct gf_dev *) data;
+
+	if (!gf_dev) {
+		return -ENODEV;
+	}
+
+	if (code >= 0) {
+		input_set_capability(gf_dev->input, EV_KEY, code);
+	}
+
+	gf_dev->home_key_code = code;
+
+	return 0;
+}
 
 static void gf_enable_irq(struct gf_dev *gf_dev)
 {
@@ -304,6 +376,15 @@ static void nav_event_input(struct gf_dev *gf_dev, gf_nav_event_t nav_event)
 	default:
 		pr_warn("%s unknown nav event: %d\n", __func__, nav_event);
 		break;
+	}
+
+	if (nav_input == KEY_BACK) {
+		nav_input = gf_dev->back_key_code;
+	} else if (nav_input == KEY_HOMEPAGE) {
+		nav_input = gf_dev->home_key_code;
+	}
+	if (nav_input == 0) {
+		return;
 	}
 
 	if ((nav_event != GF_NAV_FINGER_DOWN) &&
@@ -756,6 +837,17 @@ static int gf_probe(struct platform_device *pdev)
 		pr_err("failed to register input device\n");
 		goto error_input;
 	}
+
+	gf_dev->back_key_code = KEY_BACK;
+	gf_dev->home_key_code = KEY_HOMEPAGE;
+
+	keypad_register("home_touch", gf_dev,
+		gf_keypad_back_read,
+		gf_keypad_back_write);
+
+	keypad_register("home_press", gf_dev,
+		gf_keypad_home_read,
+		gf_keypad_home_write);
 
 #ifdef AP_CONTROL_CLK
 	pr_info("Get the clk resource.\n");
