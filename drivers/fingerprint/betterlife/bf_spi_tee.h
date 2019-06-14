@@ -81,7 +81,6 @@ struct bf_device {
 	u8 irq_signal;
 #endif
 	struct wake_lock ttw_wl;
-	bool key_disabled;
 };
 
 
