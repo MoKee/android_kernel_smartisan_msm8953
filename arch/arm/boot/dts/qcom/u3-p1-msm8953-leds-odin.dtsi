@@ -20,7 +20,7 @@
 				label = "mpp";
 				linux,name = "green";
 				qcom,id = <6>;
-				linux,default-trigger = "batter-full";
+				linux,default-trigger = "none";
 				qcom,default-state = "off";
 				qcom,max-current = <40>;
 				qcom,mode = "manual";
@@ -47,7 +47,7 @@
 				qcom,current-setting = <5>;
 				qcom,mode = "pwm";
 				qcom,source-sel = <0x0A>;
-				qcom,mode-ctrl = <0x10>;
+				qcom,mode-ctrl = <0x60>;
 				pwms = <&pm8953_pwm 0 0>;
 				qcom,pwm-us = <1000>;
 				qcom,pwm-channel = <0>;
