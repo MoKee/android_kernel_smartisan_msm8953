@@ -186,6 +186,9 @@ enum dwc3_chg_type {
 	DWC3_DCP_CHARGER,
 	DWC3_CDP_CHARGER,
 	DWC3_PROPRIETARY_CHARGER,
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+	DWC3_FLOATED_CHARGER,
+#endif
 };
 
 struct dwc3_msm {
@@ -275,6 +278,11 @@ struct dwc3_msm {
 	struct pm_qos_request   pm_qos_req_dma;
 	struct delayed_work     perf_vote_work;
 	enum dwc3_perf_mode	curr_mode;
+
+#ifdef CONFIG_VENDOR_SMARTISAN_OSCAR
+	bool			is_first_chg_hrtimer;
+	struct hrtimer		chg_hrtimer;
+#endif
 };
 
 #define USB_HSPHY_3P3_VOL_MIN		3050000 /* uV */
@@ -1856,6 +1864,9 @@ static void dwc3_msm_notify_event(struct dwc3 *dwc, unsigned event,
 					PWR_EVNT_LPM_OUT_L1_MASK, 1);
 
 		atomic_set(&dwc->in_lpm, 0);
+#ifdef CONFIG_VENDOR_SMARTISAN_OSCAR
+		hrtimer_cancel(&mdwc->chg_hrtimer);
+#endif
 		break;
 	case DWC3_CONTROLLER_NOTIFY_OTG_EVENT:
 		dev_dbg(mdwc->dev, "DWC3_CONTROLLER_NOTIFY_OTG_EVENT received\n");
@@ -2343,6 +2354,9 @@ static void dwc3_ext_event_notify(struct dwc3_msm *mdwc)
 	} else {
 		dbg_event(0xFF, "BSV clear", 0);
 		clear_bit(B_SESS_VLD, &mdwc->inputs);
+#ifdef CONFIG_VENDOR_SMARTISAN_OSCAR
+		hrtimer_cancel(&mdwc->chg_hrtimer);
+#endif
 	}
 
 	if (mdwc->suspend) {
@@ -2530,6 +2544,11 @@ static int dwc3_msm_power_get_property_usb(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_USB_OTG:
 		val->intval = !mdwc->id_state;
 		break;
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+	case POWER_SUPPLY_PROP_DPDM_FLOAT:
+		val->intval = mdwc->chg_type == DWC3_FLOATED_CHARGER;
+		break;
+#endif
 	default:
 		return -EINVAL;
 	}
@@ -2648,6 +2667,9 @@ static int dwc3_msm_power_set_property_usb(struct power_supply *psy,
 		case POWER_SUPPLY_TYPE_USB:
 			mdwc->chg_type = DWC3_SDP_CHARGER;
 			mdwc->voltage_max = MICRO_5V;
+#ifdef CONFIG_VENDOR_SMARTISAN_OSCAR
+			hrtimer_start(&mdwc->chg_hrtimer, ktime_set(1, 0), HRTIMER_MODE_REL);
+#endif
 			break;
 		case POWER_SUPPLY_TYPE_USB_DCP:
 			mdwc->chg_type = DWC3_DCP_CHARGER;
@@ -2923,6 +2945,33 @@ static ssize_t xhci_link_compliance_store(struct device *dev,
 }
 
 static DEVICE_ATTR_RW(xhci_link_compliance);
+
+#ifdef CONFIG_VENDOR_SMARTISAN_OSCAR
+static enum hrtimer_restart chg_hrtimer_func(struct hrtimer *hrtimer)
+{
+	struct power_supply *usb_psy;
+	const union power_supply_propval ret = {500000,};
+	struct dwc3_msm *mdwc = container_of(hrtimer, struct dwc3_msm,chg_hrtimer);
+
+	pr_info("%s(): Inside timer expired. DO floating charger update!\n", __func__);
+
+	usb_psy = power_supply_get_by_name("usb");
+	if (!usb_psy) {
+		pr_err("usb supply not found!\n");
+	} else {
+		dwc3_msm_power_set_property_usb(usb_psy, POWER_SUPPLY_PROP_CURRENT_MAX, &ret);
+	}
+
+	if (!mdwc->is_first_chg_hrtimer) {
+		dwc3_msm_gadget_vbus_draw(mdwc, 500);
+		mdwc->is_first_chg_hrtimer = true;
+	} else {
+		dwc3_msm_gadget_vbus_draw(mdwc, 1500);
+	}
+
+	return HRTIMER_NORESTART;
+}
+#endif
 
 static int dwc3_msm_probe(struct platform_device *pdev)
 {
@@ -3297,6 +3346,11 @@ static int dwc3_msm_probe(struct platform_device *pdev)
 
 	if (of_property_read_bool(node, "qcom,disable-dev-mode-pm"))
 		pm_runtime_get_noresume(mdwc->dev);
+
+#ifdef CONFIG_VENDOR_SMARTISAN_OSCAR
+	hrtimer_init(&mdwc->chg_hrtimer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
+	mdwc->chg_hrtimer.function = chg_hrtimer_func;
+#endif
 
 	/* Update initial ID state */
 	if (mdwc->pmic_id_irq) {
@@ -3796,8 +3850,14 @@ static int dwc3_msm_gadget_vbus_draw(struct dwc3_msm *mdwc, unsigned mA)
 		power_supply_type = POWER_SUPPLY_TYPE_USB;
 	else if (mdwc->chg_type == DWC3_CDP_CHARGER)
 		power_supply_type = POWER_SUPPLY_TYPE_USB_CDP;
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+	else if (mdwc->chg_type == DWC3_DCP_CHARGER ||
+			mdwc->chg_type == DWC3_PROPRIETARY_CHARGER ||
+			mdwc->chg_type == DWC3_FLOATED_CHARGER)
+#else
 	else if (mdwc->chg_type == DWC3_DCP_CHARGER ||
 			mdwc->chg_type == DWC3_PROPRIETARY_CHARGER)
+#endif
 		power_supply_type = POWER_SUPPLY_TYPE_USB_DCP;
 	else
 		power_supply_type = POWER_SUPPLY_TYPE_UNKNOWN;
@@ -3862,11 +3922,23 @@ static void dwc3_check_float_lines(struct dwc3_msm *mdwc)
 
 	/* Get linestate with Idp_src enabled */
 	dpdm = usb_phy_dpdm_with_idp_src(mdwc->hs_phy);
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+	if (dpdm & 0x2) {
+#else
 	if (dpdm == 0x2) {
+#endif
 		/* DP is HIGH = lines are floating */
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+		mdwc->chg_type = DWC3_FLOATED_CHARGER;
+#else
 		mdwc->chg_type = DWC3_PROPRIETARY_CHARGER;
+#endif
 		mdwc->otg_state = OTG_STATE_B_IDLE;
 		pm_runtime_put_sync(mdwc->dev);
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+		dwc3_msm_gadget_vbus_draw(mdwc, dcp_max_current);
+		dev_dbg(mdwc->dev, "float charger\n");
+#endif
 		dbg_event(0xFF, "FLT psync",
 				atomic_read(&mdwc->dev->power.usage_count));
 	} else if (dpdm) {
@@ -3982,6 +4054,9 @@ static void dwc3_msm_otg_sm_work(struct work_struct *w)
 			switch (mdwc->chg_type) {
 			case DWC3_DCP_CHARGER:
 			case DWC3_PROPRIETARY_CHARGER:
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+			case DWC3_FLOATED_CHARGER:
+#endif
 				dev_dbg(mdwc->dev, "DCP charger\n");
 				dwc3_msm_gadget_vbus_draw(mdwc,
 						dcp_max_current);
@@ -4000,8 +4075,10 @@ static void dwc3_msm_otg_sm_work(struct work_struct *w)
 				if (mdwc->detect_dpdm_floating &&
 					mdwc->chg_type == DWC3_SDP_CHARGER) {
 					dwc3_check_float_lines(mdwc);
+#ifndef CONFIG_VENDOR_SMARTISAN_ODIN
 					if (mdwc->chg_type != DWC3_SDP_CHARGER)
 						break;
+#endif
 				}
 				dwc3_otg_start_peripheral(mdwc, 1);
 				mdwc->otg_state = OTG_STATE_B_PERIPHERAL;
@@ -4040,6 +4117,9 @@ static void dwc3_msm_otg_sm_work(struct work_struct *w)
 			switch (mdwc->chg_type) {
 			case DWC3_DCP_CHARGER:
 			case DWC3_PROPRIETARY_CHARGER:
+#ifdef CONFIG_VENDOR_SMARTISAN_ODIN
+			case DWC3_FLOATED_CHARGER:
+#endif
 				dbg_event(0xFF, "DCPCharger", 0);
 				dwc3_msm_gadget_vbus_draw(mdwc,
 						dcp_max_current);
