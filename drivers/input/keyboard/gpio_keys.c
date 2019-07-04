@@ -46,6 +46,7 @@ struct gpio_button_data {
 	bool disabled;
 	bool key_pressed;
 	int key_code;
+	bool is_home;
 };
 
 struct gpio_keys_drvdata {
@@ -53,6 +54,8 @@ struct gpio_keys_drvdata {
 	struct pinctrl *key_pinctrl;
 	struct input_dev *input;
 	struct mutex disable_lock;
+	struct delayed_work home_unlock_dwork;
+	atomic_t home_locked;
 	struct gpio_button_data data[0];
 };
 
@@ -60,6 +63,36 @@ static struct device *global_dev;
 static struct syscore_ops gpio_keys_syscore_pm_ops;
 
 static void gpio_keys_syscore_resume(void);
+
+extern bool gpio_keys_check_and_unlock_home(void) {
+	struct gpio_keys_drvdata *ddata = dev_get_drvdata(global_dev);
+	int locked = atomic_read(&ddata->home_locked);
+	cancel_delayed_work_sync(&ddata->home_unlock_dwork);
+	atomic_set(&ddata->home_locked, 0);
+	return locked != 0;
+}
+
+static void gpio_keys_lock_home(void) {
+	struct gpio_keys_drvdata *ddata = dev_get_drvdata(global_dev);
+	cancel_delayed_work_sync(&ddata->home_unlock_dwork);
+	atomic_set(&ddata->home_locked, 1);
+}
+
+static void gpio_keys_unlock_home(void) {
+	struct gpio_keys_drvdata *ddata = dev_get_drvdata(global_dev);
+	schedule_delayed_work(&ddata->home_unlock_dwork, msecs_to_jiffies(1000));
+}
+
+static void gpio_keys_home_unlock_fn(struct work_struct *work)
+{
+	struct delayed_work *dwork;
+	struct gpio_keys_drvdata *ddata;
+
+	dwork = to_delayed_work(work);
+	ddata = container_of(dwork, struct gpio_keys_drvdata, home_unlock_dwork);
+
+	atomic_set(&ddata->home_locked, 0);
+}
 
 /*
  * SYSFS interface for enabling/disabling keys and switches:
@@ -389,6 +422,13 @@ static void gpio_keys_gpio_report_event(struct gpio_button_data *bdata)
 		input_event(input, type, bdata->key_code, !!state);
 	}
 	input_sync(input);
+	if (bdata->is_home) {
+		if (state) {
+			gpio_keys_lock_home();
+		} else {
+			gpio_keys_unlock_home();
+		}
+	}
 }
 
 static void gpio_keys_gpio_work_func(struct work_struct *work)
@@ -541,6 +581,8 @@ static int gpio_keys_setup_key(struct platform_device *pdev,
 		keypad_register(button->desc, bdata,
 			gpio_keys_keypad_read,
 			gpio_keys_keypad_write);
+
+		bdata->is_home = strcmp(button->desc, "home_press") == 0;
 	} else {
 		if (!button->irq) {
 			dev_err(dev, "No IRQ specified\n");
@@ -856,6 +898,9 @@ static int gpio_keys_probe(struct platform_device *pdev)
 		if (button->wakeup)
 			wakeup = 1;
 	}
+
+	atomic_set(&ddata->home_locked, 0);
+	INIT_DELAYED_WORK(&ddata->home_unlock_dwork, gpio_keys_home_unlock_fn);
 
 	error = sysfs_create_group(&pdev->dev.kobj, &gpio_keys_attr_group);
 	if (error) {

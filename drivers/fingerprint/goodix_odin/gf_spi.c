@@ -208,6 +208,8 @@ found:
 }
 #endif
 
+extern bool gpio_keys_check_and_unlock_home(void);
+
 static int gf_keypad_read(u32 *code, void *data)
 {
 	struct gf_dev *gf_dev = (struct gf_dev *) data;
@@ -473,6 +475,9 @@ static long gf_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 		if (gf_key.key == KEY_BACK) {
 			if (gf_dev->key_code != 0) {
+				if (gf_key.value && gpio_keys_check_and_unlock_home()) {
+					break;
+				}
 				input_report_key(gf_dev->input, gf_dev->key_code, gf_key.value);
 				input_sync(gf_dev->input);
 			}
