@@ -569,6 +569,8 @@ asmlinkage __visible void __init start_kernel(void)
 	page_alloc_init();
 
 	pr_notice("Kernel command line: %s\n", boot_command_line);
+	/* parameters may set static keys */
+	jump_label_init();
 	parse_early_param();
 	after_dashes = parse_args("Booting kernel",
 				  static_command_line, __start___param,
@@ -582,8 +584,6 @@ asmlinkage __visible void __init start_kernel(void)
 	parse_args("Initiate Board ID", boot_command_line,
 			NULL, 0, 0, 0, NULL, &init_board_id);
 #endif
-
-	jump_label_init();
 
 	/*
 	 * These use large bootmem allocations and must precede
